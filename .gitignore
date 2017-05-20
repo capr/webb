@@ -1,0 +1,9 @@
+git-up.cmd
+nginx/*_temp
+nginx/logs/
+nginx/ssl/
+nginx/conf/secrets.conf
+www/img
+www/img/
+env
+www/_git
