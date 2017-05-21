@@ -265,6 +265,13 @@ local chunks = {} --{action = chunk}
 
 local lp = require'lp'
 
+function include(template_file, env)
+	lp.setoutfunc'out'
+	glue.update(_G, env) --TODO: maybe we shouldn't polute _G
+	lp.include(codepath(template_file), _G)
+end
+
+
 local function out_catlist(listfile, sep)
 	for f in glue.readfile(listfile):gmatch'([^%s]+)' do
 		out(glue.readfile(filepath(f)))

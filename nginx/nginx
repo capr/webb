@@ -27,5 +27,7 @@ export LUA_PATH="$WEBBL;$LPBL;$LPL;$ORL"
 export LUA_CPATH="$LPBB;$ORB"
 export LD_LIBRARY_PATH="$LPB:$SYSB"
 
+mkdir -p "$DIR/logs"
+
 sudo -E "$OPENRESTY_DIR/nginx/sbin/nginx" -p "$DIR" \
     -c "$DIR/conf/nginx.$ENV.conf" "$@"
