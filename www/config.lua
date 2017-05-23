@@ -1,16 +1,9 @@
 setfenv(1, require'g')
 
-config('smtp_host', '93.115.10.161')
 config('basepath', '../www')
+config('lang', 'ro')
+config('smtp_host', '93.115.10.161')
 
-if config('lang', 'en') == 'ro' then
-
-S('reset_pass_subject', 'Linkul pentru schimbarea parolei')
-
-S('order_placed_email_subject', 'Comanda nr. %s la %s')
-S('shiptype_home', 'Prin curier')
-S('shiptype_store', 'La magazin')
-S('sales', 'comenzi')
-S('abandoned_cart_email_subject', 'Ne e dor de tine!')
-
-end
+config('facebook_app_id', '725102964211663')
+config('google_client_id', '113821693132-an9cmghgm2fockigiubs1rp7tmfr9vnb.apps.googleusercontent.com')
+config('analytics_ua', 'UA-57284122-1')

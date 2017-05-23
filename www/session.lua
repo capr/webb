@@ -78,7 +78,7 @@ local function create_user()
 			(clientip, atime, ctime, mtime)
 		values
 			(?, now(), now(), now())
-	]], clientip())
+	]], client_ip())
 end
 
 function auth.session()
@@ -260,9 +260,9 @@ function send_auth_token(email)
 	--send it to the user
 	local subj = S('reset_pass_subject', 'Your reset password link')
 	local msg = render('reset_pass_email', {
-		url = home_url('/login/'..token),
+		url = absurl('/login/'..token),
 	})
-	local from = config'noreply_email' or home_email'no-reply'
+	local from = config'noreply_email' or emailaddr'no-reply'
 	sendmail(from, email, subj, msg)
 end
 
@@ -412,4 +412,14 @@ end
 
 function editmode()
 	return admin()
+end
+
+function touch_usr()
+	local uid = session_uid()
+	if not uid then return end
+	query([[
+		update usr set
+			atime = now(), mtime = mtime, codesent = 0
+		where uid = ?
+	]], uid)
 end
