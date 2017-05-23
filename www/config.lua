@@ -1,5 +1,3 @@
-setfenv(1, require'g')
-
 config('basepath', '../www')
 config('lang', 'ro')
 config('smtp_host', '93.115.10.161')

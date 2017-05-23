@@ -1,4 +1,3 @@
-setfenv(1, require'g')
 local random_string = require'resty_random'
 local session_ = require'resty_session'
 

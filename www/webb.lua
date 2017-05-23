@@ -1,4 +1,5 @@
-setfenv(1, require'g')
+--webb framework
+--written by Cosmin Apreutesei. Public Domain.
 
 glue = require'glue'
 
@@ -33,10 +34,6 @@ function S(name, val)
 	end
 	return S_[name]
 end
-
---load config file as early as possible in case we need to decide
---on anything a compile time based on config values.
-require'config'
 
 --per-request memoization ----------------------------------------------------
 
@@ -206,7 +203,7 @@ end
 
 pp = require'pp'
 
-_G.__index.print = print --override Lua's print() for pp.
+_G.print = print --override Lua's print() for pp.
 
 --json API -------------------------------------------------------------------
 
@@ -296,6 +293,87 @@ local function gzip_filter(out_content, gen_etag)
 	end
 end
 
+--html filters ---------------------------------------------------------------
+
+function filter_lang(buf)
+	local lang0 = lang()
+
+	--replace <t class=lang>
+	buf = buf:gsub('<t class=([^>]+)>(.-)</t>', function(lang, html)
+		assert(not html:find('<t class=', 1, true), html)
+		if lang ~= lang0 then return '' end
+		return html
+	end)
+
+	--replace attr:lang="val" and attr:lang=val
+	local function repl_attr(attr, lang, val)
+		if lang ~= lang0 then return '' end
+		return attr .. val
+	end
+	buf = buf:gsub('(%s[%w_%:%-]+)%:(%a?%a?)(=%b"")', repl_attr)
+	buf = buf:gsub('(%s[%w_%:%-]+)%:(%a?%a?)(=[^%s>]*)', repl_attr)
+
+	return buf
+end
+
+function filter_comments(buf)
+	return buf:gsub('<!%-%-.-%-%->', '')
+end
+
+function html_filter(out_content)
+	push_outbuf()
+	out_content()
+	local buf = pop_outbuf()
+	buf = filter_lang(buf)
+	buf = filter_comments(buf)
+	out(buf)
+end
+
+--luapages API ---------------------------------------------------------------
+
+local lp = require'lp'
+
+local compile = glue.memoize(function(path)
+	lp.setoutfunc'out'
+	local template = glue.readfile(path)
+	return lp.compile(template, '@'..path, _G)
+end)
+
+--TODO: remove env, find a better way to share values
+function include(name, env)
+	local path = basepath(name..'.lp')
+	glue.update(_G, env)
+	compile(path)()
+end
+
+--catlist API ----------------------------------------------------------------
+
+local function out_catlist(listfile, sep)
+	for f in glue.readfile(listfile):gmatch'([^%s]+)' do
+		out(glue.readfile(filepath(f)))
+		out(sep)
+	end
+end
+
+local function catlist(listfile, sep)
+
+	local function gen_etag()
+		local t = {}
+		for f in glue.readfile(listfile):gmatch'([^%s]+)' do
+			local path = check(filepath(f))
+			local mtime = lfs.attributes(path, 'modification')
+			t[#t+1] = tostring(mtime)
+		end
+		return ngx.md5(table.concat(t, ' '))
+	end
+
+	local function out_content()
+		out_catlist(listfile, sep)
+	end
+
+	return gzip_filter(out_content, gen_etag)
+end
+
 --action API -----------------------------------------------------------------
 
 function parse_path() --path -> action, extension, args
@@ -326,46 +404,14 @@ end
 
 local chunks = {} --{action = chunk}
 
-local lp = require'lp'
-
-function include(name, env)
-	lp.setoutfunc'out'
-	glue.update(_G, env) --TODO: maybe we shouldn't polute _G
-	lp.include(basepath(name..'.lp'), _G)
-end
-
-local function out_catlist(listfile, sep)
-	for f in glue.readfile(listfile):gmatch'([^%s]+)' do
-		out(glue.readfile(filepath(f)))
-		out(sep)
-	end
-end
-
-local function catlist(listfile, sep)
-
-	local function gen_etag()
-		local t = {}
-		for f in glue.readfile(listfile):gmatch'([^%s]+)' do
-			local path = check(filepath(f))
-			local mtime = lfs.attributes(path, 'modification')
-			t[#t+1] = tostring(mtime)
-		end
-		return ngx.md5(table.concat(t, ' '))
-	end
-
-	local function out_content()
-		out_catlist(listfile, sep)
-	end
-
-	return gzip_filter(out_content, gen_etag)
-end
-
 local mime_types = {
 	html = 'text/html',
 	json = 'application/json',
 	txt  = 'text/plain',
 	jpg  = 'image/jpeg',
 	png  = 'image/png',
+	js   = 'application/javascript',
+	css  = 'text/css',
 }
 
 function action(action, ...)
@@ -373,94 +419,51 @@ function action(action, ...)
 	--find the action.
 	local chunk = chunks[action]
 	if not chunk then
-		local path = check(
+		local path =
 			   filepath(action..'.cat')
 			or filepath(action..'.lua')
-			or filepath(action..'.lp'))
+			or filepath(action..'.lp')
+		if not path then
+			return --action not found
+		end
 		local ext = path:match'%.([^%.]+)$'
 		if ext == 'cat' then
 			local fext = action:match'%.([^%.]+)$'
 			chunk = catlist(path, fext == 'js' and ';\n' or '\n')
 		elseif ext == 'lp' then
-			lp.setoutfunc'out'
-			local template = glue.readfile(path)
-			chunk = lp.compile(template, action, _G)
+			chunk = compile(path)
 		else
 			chunk = assert(loadfile(path))
 		end
-		setfenv(chunk, getfenv())
+		setfenv(chunk, _G)
 		chunks[action] = chunk
 	end
 
 	--set mime type based on action's file extension.
 	local ext = action:match'%.([^%.]+)$'
-	local mime = mime_types[ext]
-	if mime then
-		ngx.header.content_type = mime
-	end
+	local mime = check(mime_types[ext])
+	ngx.header.content_type = mime
 
 	--execute the action.
-	chunk(...)
-end
-
---html filters ---------------------------------------------------------------
-
-function filter_lang(buf)
-	local lang0 = lang()
-
-	--replace <t class=lang>
-	buf = buf:gsub('<t class=([^>]+)>(.-)</t>', function(lang, html)
-		assert(not html:find('<t class=', 1, true), html)
-		if lang ~= lang0 then return '' end
-		return html
-	end)
-
-	--replace attr:lang="val" and attr:lang=val
-	local function repl_attr(attr, lang, val)
-		if lang ~= lang0 then return '' end
-		return attr .. val
+	if mime == 'text/html' then
+		local args = glue.pack(...)
+		html_filter(function()
+			chunk(glue.unpack(args))
+		end)
+	else
+		chunk(...)
 	end
-	buf = buf:gsub('(%s[%w_%:%-]+)%:(%a?%a?)(=%b"")', repl_attr)
-	buf = buf:gsub('(%s[%w_%:%-]+)%:(%a?%a?)(=[^%s>]*)', repl_attr)
 
-	return buf
-end
-
-function filter_comments(buf)
-	return buf:gsub('<!%-%-.-%-%->', '')
+	return true
 end
 
 --missing image fallback -----------------------------------------------------
 
 function check_img()
 	local path = ngx.var.uri
-	local kind = path:match'^/img/([^/]+)'
-	if not kind then return end --not an image
-
-	if kind == 'p' then
-
-		check(not config('no_images'))
-
-		--check for short form and make an internal redirect.
-		local imgid, size = path:match'^/img/p/(%d+)-(%w+)%.jpg'
-		if imgid then
-			path = '/img/p'..imgid:gsub('.', '/%1')..'/'..imgid..'-'..size..'_default.jpg'
-			ngx.header['Cache-Control'] = 'max-age='.. (24 * 3600)
-			ngx.exec(path)
-		end
-		--redirect to default image (default is 302-moved-temporarily)
-		local size = path:match'%-(%w+)_default.jpg$' or 'cart'
-		ngx.redirect('/img/p/en-default-'..size..'_default.jpg')
-	else
+	if path:find'%.jpg$' or path:find'%.png$' then
 		--redirect to empty image (default is 302-moved-temporarily)
 		ngx.redirect('/0.png')
 	end
 end
 
---load add-ons ---------------------------------------------------------------
-
-require'query'
-require'sendmail'
-require'session'
-
-return _G

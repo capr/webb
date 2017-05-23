@@ -4,6 +4,12 @@ CONFIG CACHING REQUEST OUTPUT JSON TEMPLATES ACTIONS QUERY MAIL SESSION USERS
 
 TODO:
 
+SUBMODULES
+
+	glue
+	pp
+
+
 CONFIG
 
 	config(name[, default_val]) -> val		get/set config value
@@ -60,7 +66,7 @@ LP TEMPLATES
 ACTIONS
 
 	parse_path() -> name, args...				parse URI path
-	action(name, args...)						execute action
+	action(name, args...) -> t|f				execute action (false if not found)
 
 QUERY
 
