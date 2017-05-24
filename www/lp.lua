@@ -92,28 +92,16 @@ function M.setcompatmode (c)
 end
 
 ----------------------------------------------------------------------------
--- Internal compilation cache.
-
-local cache = {}
-
-----------------------------------------------------------------------------
 -- Translates a template into a Lua function.
 -- Does NOT execute the resulting function.
--- Uses a cache of templates.
 -- @param string String with the template to be translated.
 -- @param chunkname String with the name of the chunk, for debugging purposes.
 -- @param env Table with the environment of the resulting function (optional).
 -- @return Function with the resulting translation.
 
 function M.compile (string, chunkname, env)
-	local s, err = cache[string]
-	if not s then
-		s = M.translate (string)
-		cache[string] = s
-	end
-	f, err = load (s, chunkname, "bt", env)
-	if not f then error (err, 3) end
-	return f
+	local s = M.translate (string)
+	return assert(load (s, chunkname, "bt", env))
 end
 
 ----------------------------------------------------------------------------

@@ -1,34 +1,31 @@
 WEBB API
 ------------------------------------------------------------------------------
-CONFIG CACHING REQUEST OUTPUT JSON TEMPLATES ACTIONS QUERY MAIL SESSION USERS
+CONFIG ENV REQUEST OUTPUT JSON MUSTACHE LUAPAGES LUA GZIP HTML CATLISTS ACTIONS
+QUERY MAIL SESSION USERS
 
-TODO:
-
-SUBMODULES
-
-	glue
-	pp
-
+REQUIRES
+	glue cjson lfs hige lp zlib resty_mysql (pp) socket
 
 CONFIG
 
 	config(name[, default_val]) -> val		get/set config value
 	S(name[, default_val])						get/set internationalized string
 
-CACHING
+ENV
 
 	once(f)											memoize function for current request
+	env() -> t										per-request shared environment
 
 REQUEST
 
 	headers([h]) -> v | t
 	GET([name]) -> v | t
 	POST([name]) -> t | t
-	lang() -> s										get current language based on ?lang=
 	absurl([path]) -> s							get the absolute url for a path
 	domain() -> s									get website domain
 	email([user]) -> s							get email address of user or 'no-reply'
 	client_ip() -> s								get client's ip address
+	lang() -> s										get current language based on ?lang=
 
 	uint_arg(s) -> n | nil						validate unsigned integer arg
 	str_arg(s) -> s | nil						validate/trim non-empty string arg
@@ -39,9 +36,11 @@ REQUEST
 
 OUTPUT
 
-	push_outbuf()									push output buffer
-	pop_outbuf() -> s								pop output buffer and return it
 	out(s)											output a string
+	push_out([f])									push output function or buffer
+	pop_out() -> s									pop output function and flush it
+	record(f) -> s									run f and collect out() calls
+
 	print(...)										print, setting text/plain
 
 JSON
@@ -49,19 +48,39 @@ JSON
 	json(s) -> t									decode json
 	json(t) -> s									encode json
 
-
 FILESYSTEM
 
 	basepath(file) -> path						get filesystem path (unchecked)
 	filepath(file) -> path						get filesystem path if file exists
+	readfile(file) -> s							get file contents
 
-MARKDOWN TEMPLATES
+MUSTACHE TEMPLATES
 
-	render(name, env) -> s						render markdown template name.lang.m
+	render_string(s[, env]) -> s				render a mustache template
+	render(file[, env]) -> s					render a mustache template
 
-LP TEMPLATES
+LUAPAGES TEMPLATES
 
-	include(name[, env])							execute LuaPages template name.lp
+	include_string(s[, env][, chunkname])	run LuaPages script
+	include(file[, env])							run LuaPages script
+
+LUA SCRIPTS
+
+	run_string(s[, env], args...) -> ret	run Lua script
+	run(file[, env], args...) -> ret			run Lua script
+
+GZIP FILTER
+
+	gzip_filter(f, gen_etag) -> f				run f and gzip out() calls
+
+HTML FILTERS
+
+	filter_lang(s) -> s							filter <t> tags and :lang attrs
+	filter_comments(s) -> s						filter <!-- --> comments
+
+CATLISTS
+
+	catlist(listfile)								concatenate js and css files
 
 ACTIONS
 

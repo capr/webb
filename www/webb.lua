@@ -1,7 +1,7 @@
 --webb framework
 --written by Cosmin Apreutesei. Public Domain.
 
-glue = require'glue'
+local glue = require'glue'
 
 --cached config function -----------------------------------------------------
 
@@ -35,8 +35,9 @@ function S(name, val)
 	return S_[name]
 end
 
---per-request memoization ----------------------------------------------------
+--per-request environment ----------------------------------------------------
 
+--per-request memoization.
 local NIL = {}
 local function enc(v) if v == nil then return NIL else return v end end
 local function dec(v) if v == NIL then return nil else return v end end
@@ -54,6 +55,17 @@ function once(f)
 		end
 		return v
 	end
+end
+
+--per-request shared environment to use in all app code.
+function env()
+	local env = ngx.ctx.env
+	if not env then
+		env = {__index = _G}
+		setmetatable(env, env)
+		ngx.ctx.env = env
+	end
+	return env
 end
 
 --request API ----------------------------------------------------------------
@@ -102,10 +114,6 @@ function POST(v)
 	end
 end
 
-function lang()
-	return GET'lang' or config('lang', 'en')
-end
-
 function absurl(path)
 	path = path or ''
 	return (config'base_url' or ngx.var.scheme..'://'..ngx.var.host) .. path
@@ -123,8 +131,8 @@ function client_ip()
 	return ngx.var.remote_addr
 end
 
-function clamp(x, min, max)
-	return math.min(math.max(x, min), max)
+function lang()
+	return GET'lang' or config('lang', 'en')
 end
 
 function uint_arg(s)
@@ -163,28 +171,47 @@ end
 
 --output API -----------------------------------------------------------------
 
-local outbufs = {}
-local outbuf
-
-function push_outbuf()
-	outbuf = {}
-	table.insert(outbufs, outbuf)
+local function default_outfunc(s)
+	ngx.print(s)
 end
 
-function pop_outbuf()
-	if not outbuf then return end
-	local s = table.concat(table.remove(outbufs))
-	outbuf = outbufs[#outbufs]
+local function outbuf()
+	local t = {}
+	return function(s)
+		if s then
+			t[#t+1] = s
+		else --flush it
+			return table.concat(t)
+		end
+	end
+end
+
+function push_out(f)
+	ngx.ctx.outfunc = f or outbuf()
+	if not ngx.ctx.outfuncs then
+		ngx.ctx.outfuncs = {}
+	end
+	table.insert(ngx.ctx.outfuncs, ngx.ctx.outfunc)
+end
+
+function pop_out()
+	if not ngx.ctx.outfunc then return end
+	local s = ngx.ctx.outfunc()
+	local outfuncs = ngx.ctx.outfuncs
+	table.remove(outfuncs)
+	ngx.ctx.outfunc = outfuncs[#outfuncs]
 	return s
 end
 
 function out(s)
-	s = tostring(s)
-	if outbuf then
-		outbuf[#outbuf+1] = s
-	else
-		ngx.print(s)
-	end
+	local outfunc = ngx.ctx.outfunc or default_outfunc
+	outfunc(tostring(s))
+end
+
+function record(out_content)
+	push_out()
+	out_content()
+	return pop_out()
 end
 
 --print API ------------------------------------------------------------------
@@ -200,10 +227,6 @@ function print(...)
 	end
 	out'\n'
 end
-
-pp = require'pp'
-
-_G.print = print --override Lua's print() for pp.
 
 --json API -------------------------------------------------------------------
 
@@ -235,14 +258,71 @@ function filepath(file) --file -> path (if exists)
 	return path
 end
 
---template API ---------------------------------------------------------------
+function readfile(file)
+	return assert(glue.readfile(basepath(file)))
+end
+
+--mustache templates ---------------------------------------------------------
 
 local hige = require'hige'
 
-function render(name, data)
-	local file = string.format('%s.%s.m', name, lang())
-	local template = assert(glue.readfile(basepath(file)))
-	return hige.render(template, data)
+function render_string(s, data)
+	return hige.render(s, data or env())
+end
+
+function render(file, data)
+	return render_string(readfile(file), data)
+end
+
+--LuaPages templates ---------------------------------------------------------
+
+local lp = require'lp'
+
+local function compile_string(s, chunkname)
+	lp.setoutfunc'out'
+	local f = lp.compile(s, chunkname)
+	return function(data)
+		setfenv(f, data or env())
+		f()
+	end
+end
+
+local compile = glue.memoize(function(file)
+	return compile_string(readfile(file), '@'..file)
+end)
+
+function include_string(s, data, chunkname)
+	return compile_string(s, chunkname)(data)
+end
+
+function include(file, data)
+	compile(file)(data)
+end
+
+--Lua scripts ----------------------------------------------------------------
+
+local function compile_lua_string(s)
+	local f = assert(loadstring(s))
+	return function(_env, ...)
+		setfenv(f, _env or env())
+		return f(...)
+	end
+end
+
+local compile_lua = glue.memoize(function(file)
+	local f = assert(loadfile(basepath(file)))
+	return function(_env, ...)
+		setfenv(f, _env or env())
+		return f(...)
+	end
+end)
+
+function run_string(s, _env, ...)
+	return compile_lua_string(s)(_env, ...)
+end
+
+function run(file, _env, ...)
+	return compile_lua(file)(_env, ...)
 end
 
 --gzip filter ----------------------------------------------------------------
@@ -254,7 +334,7 @@ local function accept_gzip()
 	return e and e:find'gzip' and true or false
 end
 
-local function gzip_filter(out_content, gen_etag)
+function gzip_filter(out_content, gen_etag)
 
 	local last_etag, last_buf
 
@@ -268,8 +348,8 @@ local function gzip_filter(out_content, gen_etag)
 
 		--generate etag
 		local etag = gen_etag()
-
 		--compare etag with client's
+
 		local etag0 = headers'if_none_match'
 		if etag0 and etag0 == etag then
 			ngx.status = 304
@@ -279,9 +359,8 @@ local function gzip_filter(out_content, gen_etag)
 		--compare etag with cached
 		if etag ~= last_etag then
 			--generate content
-			push_outbuf()
-			out_content()
-			last_buf = zlib.deflate(pop_outbuf(), '', nil, 'gzip')
+			local s = record(out_content)
+			last_buf = zlib.deflate(s, '', nil, 'gzip')
 			last_etag = etag
 		end
 
@@ -320,63 +399,40 @@ function filter_comments(buf)
 	return buf:gsub('<!%-%-.-%-%->', '')
 end
 
-function html_filter(out_content)
-	push_outbuf()
-	out_content()
-	local buf = pop_outbuf()
-	buf = filter_lang(buf)
-	buf = filter_comments(buf)
-	out(buf)
-end
+--concatenated files preprocessor --------------------------------------------
 
---luapages API ---------------------------------------------------------------
+local catlist_filter = glue.memoize(function(listfile)
 
-local lp = require'lp'
+	local js = listfile:find'%.js%.cat$'
+	local sep = js and ';\n' or '\n'
 
-local compile = glue.memoize(function(path)
-	lp.setoutfunc'out'
-	local template = glue.readfile(path)
-	return lp.compile(template, '@'..path, _G)
-end)
-
---TODO: remove env, find a better way to share values
-function include(name, env)
-	local path = basepath(name..'.lp')
-	glue.update(_G, env)
-	compile(path)()
-end
-
---catlist API ----------------------------------------------------------------
-
-local function out_catlist(listfile, sep)
-	for f in glue.readfile(listfile):gmatch'([^%s]+)' do
-		out(glue.readfile(filepath(f)))
-		out(sep)
+	local function out_content()
+		for file in readfile(listfile):gmatch'([^%s]+)' do
+			out(readfile(file))
+			out(sep)
+		end
 	end
-end
-
-local function catlist(listfile, sep)
 
 	local function gen_etag()
 		local t = {}
-		for f in glue.readfile(listfile):gmatch'([^%s]+)' do
-			local path = check(filepath(f))
+		for file in readfile(listfile):gmatch'([^%s]+)' do
+			local path = check(filepath(file))
 			local mtime = lfs.attributes(path, 'modification')
 			t[#t+1] = tostring(mtime)
 		end
 		return ngx.md5(table.concat(t, ' '))
 	end
 
-	local function out_content()
-		out_catlist(listfile, sep)
-	end
-
 	return gzip_filter(out_content, gen_etag)
+end)
+
+function catlist(listfile)
+	catlist_filter(listfile)()
 end
 
 --action API -----------------------------------------------------------------
 
-function parse_path() --path -> action, extension, args
+function parse_path() --path -> action, args
 	local path = ngx.var.uri
 
 	--split path
@@ -406,52 +462,43 @@ local chunks = {} --{action = chunk}
 
 local mime_types = {
 	html = 'text/html',
-	json = 'application/json',
 	txt  = 'text/plain',
+	css  = 'text/css',
+	json = 'application/json',
+	js   = 'application/javascript',
 	jpg  = 'image/jpeg',
 	png  = 'image/png',
-	js   = 'application/javascript',
-	css  = 'text/css',
 }
 
 function action(action, ...)
 
-	--find the action.
-	local chunk = chunks[action]
-	if not chunk then
-		local path =
-			   filepath(action..'.cat')
-			or filepath(action..'.lua')
-			or filepath(action..'.lp')
-		if not path then
-			return --action not found
-		end
-		local ext = path:match'%.([^%.]+)$'
-		if ext == 'cat' then
-			local fext = action:match'%.([^%.]+)$'
-			chunk = catlist(path, fext == 'js' and ';\n' or '\n')
-		elseif ext == 'lp' then
-			chunk = compile(path)
-		else
-			chunk = assert(loadfile(path))
-		end
-		setfenv(chunk, _G)
-		chunks[action] = chunk
-	end
-
 	--set mime type based on action's file extension.
 	local ext = action:match'%.([^%.]+)$'
-	local mime = check(mime_types[ext])
-	ngx.header.content_type = mime
+	local mime = assert(mime_types[ext])
 
-	--execute the action.
 	if mime == 'text/html' then
-		local args = glue.pack(...)
-		html_filter(function()
-			chunk(glue.unpack(args))
-		end)
+		push_out()
+	end
+
+	if filepath(action..'.cat') then
+		ngx.header.content_type = mime
+		catlist(action..'.cat')
+	elseif filepath(action..'.lua') then
+		ngx.header.content_type = mime
+		run(action..'.lua')
+	elseif filepath(action..'.lp') then
+		ngx.header.content_type = mime
+		include(action..'.lp')
 	else
-		chunk(...)
+		if mime == 'text/html' then
+			pop_out()
+		end
+		return
+	end
+
+	--apply html filters
+	if mime == 'text/html' then
+		out(filter_lang(filter_comments(pop_out())))
 	end
 
 	return true
