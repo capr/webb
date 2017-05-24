@@ -155,6 +155,17 @@ function enum_arg(s, ...)
 	end
 end
 
+function list_arg(s, arg_f)
+	local s = str_arg(s)
+	if not s then return end
+	arg_f = arg_f or str_arg
+	local t = {}
+	for s in glue.gsplit(s, ',') do
+		table.insert(t, arg_f(s))
+	end
+	return t
+end
+
 function check(ret, err)
 	if ret then return ret end
 	ngx.status = 404
@@ -485,7 +496,7 @@ function action(action, ...)
 		catlist(action..'.cat')
 	elseif filepath(action..'.lua') then
 		ngx.header.content_type = mime
-		run(action..'.lua')
+		run(action..'.lua', env(), ...)
 	elseif filepath(action..'.lp') then
 		ngx.header.content_type = mime
 		include(action..'.lp')

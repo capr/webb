@@ -18,7 +18,7 @@ local function connect()
 	assert_db(db:connect{
 		host     = config('db_host', '127.0.0.1'),
 		port     = 3306,
-		database = config('db_name', 'ifthen_dojo'),
+		database = config('db_name'),
 		user     = config('db_user', 'root'),
 		password = config('db_pass'),
 	})

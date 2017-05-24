@@ -12,6 +12,7 @@ session = once(function()
 	session_.check.ssi = false --ssi will change after browser closes
 	session_.check.ua = false  --user could upgrade the browser
 	session_.cookie.lifetime = 2 * 365 * 24 * 3600 --2 years
+	session_.secret = config'session_secret'
 	return assert(session_.start())
 end)
 
@@ -118,36 +119,6 @@ end
 
 local function delete_user(uid)
 	query('delete from usr where uid = ?', uid)
-end
-
-local function transfer_cart(cur_uid, new_uid)
-	--if the current cart contains buy-now items, we assume that the user
-	--wants to buy those items instead of the items in its account cart,
-	--and so we move those last-session items into the "buy later" bin.
-	if tonumber(query1([[
-		select count(1) from cartitem where
-			buylater = 0 and uid = ?
-		]], cur_uid)) > 1
-	then
-		query('update cartitem set buylater = 1 where uid = ?', new_uid)
-	end
-	if anonymous_uid(cur_uid) then
-		--move the items in the throw-away account into the user's account.
-		query('update cartitem set uid = ? where uid = ?', new_uid, cur_uid)
-	else
-		--we don't know if the items in the current cart belong to the user
-		--that is logging in now, or to the current user that is logging out.
-		--so we copy the items from the current acount to the new account,
-		--so that both users have them.
-		query([[
-			insert into cartitem
-				(uid, pid, coid, qty, pos, buylater, ctime, mtime)
-			select
-				?, pid, coid, qty, pos, buylater, ctime, mtime
-			from cartitem where
-				uid = ?
-		]], new_uid, cur_uid)
-	end
 end
 
 function auth.pass(auth)
@@ -380,13 +351,14 @@ end
 
 --authentication logic -------------------------------------------------------
 
-function login(auth)
+function login(auth, switch_user)
+	switch_user = switch_user or glue.pass
 	local uid = authenticate(auth)
 	local suid = valid_uid(session_uid())
 	if uid then
 		if uid ~= suid then
 			if suid then
-				transfer_cart(suid, uid)
+				switch_user(suid, uid)
 				if anonymous_uid(suid) then
 					delete_user(suid)
 				end
