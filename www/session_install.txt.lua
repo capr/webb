@@ -57,3 +57,4 @@ $table usrtoken (
 	ctime       $ctime
 );
 ]]
+

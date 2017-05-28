@@ -1,7 +1,7 @@
 --webb framework
 --written by Cosmin Apreutesei. Public Domain.
 
-local glue = require'glue'
+glue = require'glue'
 
 --cached config function -----------------------------------------------------
 
@@ -41,38 +41,63 @@ end
 local NIL = {}
 local function enc(v) if v == nil then return NIL else return v end end
 local function dec(v) if v == NIL then return nil else return v end end
-function once(f)
-	return function(k)
+function once(f, clear_cache, ...)
+	if clear_cache then
 		local t = ngx.ctx[f]
-		if not t then
-			t = {}
-			ngx.ctx[f] = t
+		if t then
+			if select(1, ...) == 0 then
+				t = {}
+				ngx.ctx[f] = t
+			else
+				t[enc(k)] = nil
+			end
 		end
-		local v = dec(t[enc(k)])
-		if v == nil then
-			v = f(k)
-			t[enc(k)] = enc(v)
+	else
+		return function(k)
+			local t = ngx.ctx[f]
+			if not t then
+				t = {}
+				ngx.ctx[f] = t
+			end
+			local v = dec(t[enc(k)])
+			if v == nil then
+				v = f(k)
+				t[enc(k)] = enc(v)
+			end
+			return v
 		end
-		return v
 	end
 end
 
 --per-request shared environment to use in all app code.
-function env()
+function env(t)
 	local env = ngx.ctx.env
 	if not env then
 		env = {__index = _G}
 		setmetatable(env, env)
 		ngx.ctx.env = env
 	end
-	return env
+	if t then
+		t.__index = env
+		return setmetatable(t, t)
+	else
+		return env
+	end
 end
 
 --request API ----------------------------------------------------------------
 
-local method = once(function()
+local _method = once(function()
 	return ngx.req.get_method()
 end)
+
+function method(which)
+	if which then
+		return _method():upper() == which:upper()
+	else
+		return _method()
+	end
+end
 
 local _headers = once(function()
 	return ngx.req.get_headers()
@@ -104,13 +129,49 @@ local _post_args = once(function()
 	return ngx.req.get_post_args()
 end)
 
-function POST(v)
+function post(v)
 	local t = _post_args()
 	if not t then return end
 	if v then
 		return t[v]
 	else
 		return t
+	end
+end
+
+local _args = once(function() --path -> action, args
+	local path = ngx.var.uri
+
+	--split path
+	local action, sargs = path:match'^/([^/]+)(/?.*)$' --action/sargs
+
+	--missing action defaults to the "home" action
+	action = action or 'home'
+
+	--missing file extension in action name defaults to ".html" extension
+	local ext = action:match'%.([^%.]+)$'
+	if not ext then
+		ext = 'html'
+		action = action .. '.' .. ext
+	end
+
+	--collect args
+	sargs = sargs or ''
+	local args = {action}
+	for s in sargs:gmatch'[^/]+' do
+		args[#args+1] = ngx.unescape_uri(s)
+	end
+
+	return args
+end)
+
+function args(n)
+	if tonumber(n) then
+		return _args()[tonumber(n)]
+	elseif n then
+		return GET(n)
+	else
+		return _args()
 	end
 end
 
@@ -124,7 +185,7 @@ function domain()
 end
 
 function email(user)
-	return string.format('%s@%s', user or 'no-reply', domain())
+	return string.format('%s@%s', assert(user), domain())
 end
 
 function client_ip()
@@ -134,6 +195,8 @@ end
 function lang()
 	return GET'lang' or config('lang', 'en')
 end
+
+--arg validation
 
 function uint_arg(s)
 	local n = s and tonumber(s:match'(%d+)$')
@@ -166,18 +229,14 @@ function list_arg(s, arg_f)
 	return t
 end
 
-function check(ret, err)
-	if ret then return ret end
-	ngx.status = 404
-	if err then ngx.print(err) end
-	ngx.exit(0)
-end
-
-function allow(ret, err)
-	if ret then return ret, err end
-	ngx.status = 403
-	if err then ngx.print(err) end
-	ngx.exit(0)
+function id_arg(id, s)
+	if not id then return end
+	if type(id) == 'string' then --decode
+		return tonumber((id:gsub('%-.*$', '')))
+	else --encode
+		s = s or ''
+		return tostring(id)..'-'..s:gsub('[ ]', '-'):lower() --TODO: strip all non-url chars!
+	end
 end
 
 --output API -----------------------------------------------------------------
@@ -219,10 +278,40 @@ function out(s)
 	outfunc(tostring(s))
 end
 
-function record(out_content)
+function record(out_content, ...)
 	push_out()
-	out_content()
+	out_content(...)
 	return pop_out()
+end
+
+function html(str)
+	if not str then return '' end
+	return tostring(str):gsub('[&"<>\\]', function(c)
+		if c == '&' then return '&amp;'
+		elseif c == '"' then return '\"'
+		elseif c == '\\' then return '\\\\'
+		elseif c == '<' then return '&lt;'
+		elseif c == '>' then return '&gt;'
+		else return c end
+	end)
+end
+
+--response API ---------------------------------------------------------------
+
+redirect = ngx.redirect
+
+function check(ret, err)
+	if ret then return ret end
+	ngx.status = 404
+	if err then ngx.print(err) end
+	ngx.exit(0)
+end
+
+function allow(ret, err)
+	if ret then return ret, err end
+	ngx.status = 403
+	if err then ngx.print(err) end
+	ngx.exit(0)
 end
 
 --print API ------------------------------------------------------------------
@@ -292,9 +381,9 @@ local lp = require'lp'
 local function compile_string(s, chunkname)
 	lp.setoutfunc'out'
 	local f = lp.compile(s, chunkname)
-	return function(data)
-		setfenv(f, data or env())
-		f()
+	return function(_env, ...)
+		setfenv(f, _env or env())
+		f(...)
 	end
 end
 
@@ -302,12 +391,12 @@ local compile = glue.memoize(function(file)
 	return compile_string(readfile(file), '@'..file)
 end)
 
-function include_string(s, data, chunkname)
-	return compile_string(s, chunkname)(data)
+function include_string(s, env, chunkname, ...)
+	return compile_string(s, chunkname)(env, ...)
 end
 
-function include(file, data)
-	compile(file)(data)
+function include(file, env, ...)
+	compile(file)(env, ...)
 end
 
 --Lua scripts ----------------------------------------------------------------
@@ -328,12 +417,12 @@ local compile_lua = glue.memoize(function(file)
 	end
 end)
 
-function run_string(s, _env, ...)
-	return compile_lua_string(s)(_env, ...)
+function run_string(s, env, ...)
+	return compile_lua_string(s)(env, ...)
 end
 
-function run(file, _env, ...)
-	return compile_lua(file)(_env, ...)
+function run(file, env, ...)
+	return compile_lua(file)(env, ...)
 end
 
 --gzip filter ----------------------------------------------------------------
@@ -443,32 +532,6 @@ end
 
 --action API -----------------------------------------------------------------
 
-function parse_path() --path -> action, args
-	local path = ngx.var.uri
-
-	--split path
-	local action, sargs = path:match'^/([^/]+)(/?.*)$' --action/sargs
-
-	--missing action defaults to the "index" action
-	action = action or 'index'
-
-	--missing file extension in action name defaults to ".html" extension
-	local ext = action:match'%.([^%.]+)$'
-	if not ext then
-		ext = 'html'
-		action = action .. '.' .. ext
-	end
-
-	--collect args
-	sargs = sargs or ''
-	local args = {}
-	for s in sargs:gmatch'[^/]+' do
-		args[#args+1] = ngx.unescape_uri(s)
-	end
-
-	return action, args
-end
-
 local chunks = {} --{action = chunk}
 
 local mime_types = {
@@ -496,7 +559,7 @@ function action(action, ...)
 		catlist(action..'.cat')
 	elseif filepath(action..'.lua') then
 		ngx.header.content_type = mime
-		run(action..'.lua', env(), ...)
+		run(action..'.lua', nil, ...)
 	elseif filepath(action..'.lp') then
 		ngx.header.content_type = mime
 		include(action..'.lp')
@@ -521,7 +584,7 @@ function check_img()
 	local path = ngx.var.uri
 	if path:find'%.jpg$' or path:find'%.png$' then
 		--redirect to empty image (default is 302-moved-temporarily)
-		ngx.redirect('/0.png')
+		redirect('/0.png')
 	end
 end
 

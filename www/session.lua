@@ -1,5 +1,6 @@
 local random_string = require'resty_random'
 local session_ = require'resty_session'
+local glue = require'glue'
 
 local function fullname(firstname, lastname)
 	return glue.trim((firstname or '')..' '..(lastname or ''))
@@ -20,11 +21,14 @@ function session_uid()
 	return session().data.uid
 end
 
+local clear_uid_cache --fw. decl
+
 local function save_uid(uid)
 	local session = session()
 	if uid ~= session.data.uid then
 		session.data.uid = uid
 		session:save()
+		clear_uid_cache()
 	end
 end
 
@@ -60,6 +64,10 @@ local userinfo = once(function(uid)
 	t.admin = t.admin == 1
 	return t
 end)
+
+function clear_userinfo_cache(uid)
+	once(userinfo, true, uid)
+end
 
 --session-cookie authentication ----------------------------------------------
 
@@ -123,13 +131,20 @@ end
 
 function auth.pass(auth)
 	if auth.action == 'login' then
-		return allow(pass_uid(auth.email, auth.pass), 'user_pass')
+		local uid = pass_uid(auth.email, auth.pass)
+		if not uid then
+			return nil, 'user_pass'
+		else
+			return uid
+		end
 	elseif auth.action == 'create' then
 		local email = glue.trim(assert(auth.email))
 		assert(#email >= 1)
 		local pass = assert(auth.pass)
 		assert(#pass >= 1)
-		allow(not pass_email_uid(email), 'email_taken')
+		if pass_email_uid(email) then
+			return nil, 'email_taken'
+		end
 		local uid = anonymous_uid(session_uid()) or create_user()
 		--first non-anonymous user is admin
 		local admin = tonumber(query1([[
@@ -150,6 +165,7 @@ function auth.pass(auth)
 			where
 				uid = ?
 			]], email, pass_hash(pass), admin, uid)
+		clear_userinfo_cache(uid)
 		return uid
 	end
 end
@@ -159,6 +175,7 @@ function set_pass(pass)
 	allow(usr.uid)
 	allow(usr.haspass)
 	query('update usr set pass = ? where uid = ?', pass_hash(pass), usr.uid)
+	clear_userinfo_cache(uid)
 end
 
 --update info (not really auth, but related) ---------------------------------
@@ -173,7 +190,9 @@ function auth.update(auth)
 	assert(#email >= 1)
 	if usr.haspass then
 		local euid = pass_email_uid(email)
-		allow(not euid or euid == uid, 'email_taken')
+		if euid and euid ~= uid then
+			return nil, 'email_taken'
+		end
 	end
 	query([[
 		update usr set
@@ -184,6 +203,7 @@ function auth.update(auth)
 		where
 			uid = ?
 		]], email, name, phone, email, uid)
+	clear_userinfo_cache(uid)
 	return uid
 end
 
@@ -232,7 +252,7 @@ function send_auth_token(email)
 	local msg = render('reset_pass_email', {
 		url = absurl('/login/'..token),
 	})
-	local from = config'noreply_email' or emailaddr'no-reply'
+	local from = config'noreply_email' or email'no-reply'
 	sendmail(from, email, subj, msg)
 end
 
@@ -297,6 +317,7 @@ function auth.facebook(auth)
 		where
 			uid = ?
 		]], t.email, t.id, fullname(t.first_name, t.last_name), t.gender, uid)
+	clear_userinfo_cache(uid)
 
 	return uid
 end
@@ -345,6 +366,7 @@ function auth.google(auth)
 		t.image and t.image.url,
 		t.name and fullname(t.name.givenName, t.name.familyName),
 		uid)
+	clear_userinfo_cache(uid)
 
 	return uid
 end
@@ -353,7 +375,7 @@ end
 
 function login(auth, switch_user)
 	switch_user = switch_user or glue.pass
-	local uid = authenticate(auth)
+	local uid, err = authenticate(auth)
 	local suid = valid_uid(session_uid())
 	if uid then
 		if uid ~= suid then
@@ -363,21 +385,30 @@ function login(auth, switch_user)
 					delete_user(suid)
 				end
 			end
-			assert(uid)
 			save_uid(uid)
 		end
 	end
-	return uid
+	return uid, err
 end
 
-uid = once(login) --TODO: reset cache when suid changes
+uid = once(function(attr)
+	if attr then
+		return userinfo(login())[attr]
+	else
+		return login()
+	end
+end)
+
+function clear_uid_cache(uid) --local, fw. declared
+	once(login, true)
+end
 
 function logout()
 	save_uid(nil)
 	return authenticate()
 end
 
-function admin() --TODO: same here
+function admin()
 	return userinfo(uid()).admin
 end
 
