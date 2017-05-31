@@ -105,7 +105,7 @@ function r.section(state, template, context)
 		template = template:gsub(section_path, function(inner)
 			if found == false then return '' end
 
-			if (section_type == '#' and value == true) or
+			if (section_type == '#' and type(value) ~= 'table' and value ~= false) or
 				(section_type == '^' and value == false)
 			then
 				return r.render(state, inner, context)

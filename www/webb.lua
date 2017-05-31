@@ -32,7 +32,7 @@ function S(name, val)
 	if val and not S_[name] then
 		S_[name] = val
 	end
-	return S_[name]
+	return S_[name] or name
 end
 
 --per-request environment ----------------------------------------------------
@@ -115,11 +115,23 @@ local _uri_args = once(function()
 	return ngx.req.get_uri_args()
 end)
 
-function GET(v)
-	if v then
+local _args = once(function() --path -> action, args
+	local args = {}
+	for s in glue.gsplit(ngx.var.uri, '/', 2, true) do
+		args[#args+1] = ngx.unescape_uri(s)
+	end
+	return args
+end)
+
+function args(n)
+	if type(n) == 'number' then
+		return _args()[n]
+	elseif n == '*?' then
+		return _uri_args()
+	elseif v then
 		return _uri_args()[v]
 	else
-		return _uri_args()
+		return _args()
 	end
 end
 
@@ -136,42 +148,6 @@ function post(v)
 		return t[v]
 	else
 		return t
-	end
-end
-
-local _args = once(function() --path -> action, args
-	local path = ngx.var.uri
-
-	--split path
-	local action, sargs = path:match'^/([^/]+)(/?.*)$' --action/sargs
-
-	--missing action defaults to the "home" action
-	action = action or 'home'
-
-	--missing file extension in action name defaults to ".html" extension
-	local ext = action:match'%.([^%.]+)$'
-	if not ext then
-		ext = 'html'
-		action = action .. '.' .. ext
-	end
-
-	--collect args
-	sargs = sargs or ''
-	local args = {action}
-	for s in sargs:gmatch'[^/]+' do
-		args[#args+1] = ngx.unescape_uri(s)
-	end
-
-	return args
-end)
-
-function args(n)
-	if tonumber(n) then
-		return _args()[tonumber(n)]
-	elseif n then
-		return GET(n)
-	else
-		return _args()
 	end
 end
 
@@ -193,7 +169,7 @@ function client_ip()
 end
 
 function lang()
-	return GET'lang' or config('lang', 'en')
+	return args'lang' or config('lang', 'en')
 end
 
 --arg validation
@@ -239,6 +215,35 @@ function id_arg(id, s)
 	end
 end
 
+--response API ---------------------------------------------------------------
+
+redirect = ngx.redirect
+
+function check(ret, err)
+	if ret then return ret end
+	ngx.status = 404
+	if err then ngx.print(err) end
+	ngx.exit(0)
+end
+
+function allow(ret, err)
+	if ret then return ret, err end
+	ngx.status = 403
+	if err then ngx.print(err) end
+	ngx.exit(0)
+end
+
+function check_etag(etag)
+	--compare etag with client's
+	local etag0 = headers'if_none_match'
+	if etag0 and etag0 == etag then
+		ngx.status = 304
+		ngx.exit(0)
+	end
+	--send etag to client as weak etag so that nginx gzip filter still apply
+	ngx.header.ETag = 'W/'..etag
+end
+
 --output API -----------------------------------------------------------------
 
 local function default_outfunc(s)
@@ -278,10 +283,12 @@ function out(s)
 	outfunc(tostring(s))
 end
 
+local function pass(...)
+	return pop_out(), ...
+end
 function record(out_content, ...)
 	push_out()
-	out_content(...)
-	return pop_out()
+	return pass(out_content(...))
 end
 
 function html(str)
@@ -294,24 +301,6 @@ function html(str)
 		elseif c == '>' then return '&gt;'
 		else return c end
 	end)
-end
-
---response API ---------------------------------------------------------------
-
-redirect = ngx.redirect
-
-function check(ret, err)
-	if ret then return ret end
-	ngx.status = 404
-	if err then ngx.print(err) end
-	ngx.exit(0)
-end
-
-function allow(ret, err)
-	if ret then return ret, err end
-	ngx.status = 403
-	if err then ngx.print(err) end
-	ngx.exit(0)
 end
 
 --print API ------------------------------------------------------------------
@@ -425,53 +414,6 @@ function run(file, env, ...)
 	return compile_lua(file)(env, ...)
 end
 
---gzip filter ----------------------------------------------------------------
-
-local zlib = require'zlib'
-
-local function accept_gzip()
-	local e = headers'accept_encoding'
-	return e and e:find'gzip' and true or false
-end
-
-function gzip_filter(out_content, gen_etag)
-
-	local last_etag, last_buf
-
-	return function()
-
-		--send it chunked if the client doesn't do gzip
-		if not accept_gzip() then
-			out_content()
-			return
-		end
-
-		--generate etag
-		local etag = gen_etag()
-		--compare etag with client's
-
-		local etag0 = headers'if_none_match'
-		if etag0 and etag0 == etag then
-			ngx.status = 304
-			ngx.exit(0)
-		end
-
-		--compare etag with cached
-		if etag ~= last_etag then
-			--generate content
-			local s = record(out_content)
-			last_buf = zlib.deflate(s, '', nil, 'gzip')
-			last_etag = etag
-		end
-
-		--send it
-		ngx.header['Content-Encoding'] = 'gzip'
-		ngx.header['Content-Length'] = #last_buf
-		ngx.header.ETag = last_etag
-		out(last_buf)
-	end
-end
-
 --html filters ---------------------------------------------------------------
 
 function filter_lang(buf)
@@ -501,38 +443,66 @@ end
 
 --concatenated files preprocessor --------------------------------------------
 
-local catlist_filter = glue.memoize(function(listfile)
-
+function catlist(listfile, ...)
 	local js = listfile:find'%.js%.cat$'
 	local sep = js and ';\n' or '\n'
 
-	local function out_content()
-		for file in readfile(listfile):gmatch'([^%s]+)' do
-			out(readfile(file))
-			out(sep)
-		end
-	end
-
-	local function gen_etag()
-		local t = {}
-		for file in readfile(listfile):gmatch'([^%s]+)' do
-			local path = check(filepath(file))
+	--generate and check etag
+	local t = {}
+	local c = {}
+	for file in readfile(listfile):gmatch'([^%s]+)' do
+		local path = filepath(file)
+		if path then --plain file, get its mtime
 			local mtime = lfs.attributes(path, 'modification')
-			t[#t+1] = tostring(mtime)
+			table.insert(t, tostring(mtime))
+			table.insert(c, function() out(readfile(file)) end)
+		else --file not found, try an action
+			local s, found = record(action, file, ...)
+			if found then
+				table.insert(t, s)
+				table.insert(c, function() out(s) end)
+			else
+				error('file not found '..file)
+			end
 		end
-		return ngx.md5(table.concat(t, ' '))
 	end
+	local etag = ngx.md5(table.concat(t, ' '))
+	check_etag(etag)
 
-	return gzip_filter(out_content, gen_etag)
-end)
-
-function catlist(listfile)
-	catlist_filter(listfile)()
+	--output the content
+	for i,f in ipairs(c) do
+		f()
+		out(sep)
+	end
 end
 
 --action API -----------------------------------------------------------------
 
-local chunks = {} --{action = chunk}
+local action_handlers = {
+	cat = function(action, ...)
+		catlist(action..'.cat', ...)
+	end,
+	lua = function(action, ...)
+		run(action..'.lua', nil, ...)
+	end,
+	lp = function(action, ...)
+		include(action..'.lp')
+	end,
+}
+
+local actions_list = glue.keys(action_handlers, true)
+
+local actionfile = glue.memoize(function(action)
+	local ret_file, ret_handler
+	for i,ext in ipairs(actions_list) do
+		local file = action..'.'..ext
+		if filepath(file) then
+			assert(not ret_file, 'multiple action files for action '..action)
+			ret_file, ret_handler = file, action_handlers[ext]
+		end
+	end
+	return {ret_file, ret_handler}
+end)
 
 local mime_types = {
 	html = 'text/html',
@@ -542,37 +512,50 @@ local mime_types = {
 	js   = 'application/javascript',
 	jpg  = 'image/jpeg',
 	png  = 'image/png',
+	ico  = 'image/ico',
+}
+
+local function html_filter(handler, action, ...)
+	local s = record(handler, action, ...)
+	out(filter_lang(filter_comments(s)))
+end
+
+local function json_filter(handler, action, ...)
+	local t = handler(action, ...)
+	if type(t) == 'table' then
+		out(json(t))
+	end
+end
+
+local mime_type_filters = {
+	['text/html']        = html_filter,
+	['application/json'] = json_filter,
 }
 
 function action(action, ...)
 
-	--set mime type based on action's file extension.
+	if action == '' then
+		action = 'home'
+	end
+
+	--set mime type based on action's file extension (default is html).
 	local ext = action:match'%.([^%.]+)$'
+	if not ext then
+		ext = 'html'
+		action = action .. '.' .. ext
+	end
 	local mime = assert(mime_types[ext])
 
-	if mime == 'text/html' then
-		push_out()
-	end
+	local file, handler = unpack(actionfile(action))
+	if not file then return end
 
-	if filepath(action..'.cat') then
-		ngx.header.content_type = mime
-		catlist(action..'.cat')
-	elseif filepath(action..'.lua') then
-		ngx.header.content_type = mime
-		run(action..'.lua', nil, ...)
-	elseif filepath(action..'.lp') then
-		ngx.header.content_type = mime
-		include(action..'.lp')
+	ngx.header.content_type = mime
+
+	local filter = mime_type_filters[mime]
+	if filter then
+		filter(handler, action, ...)
 	else
-		if mime == 'text/html' then
-			pop_out()
-		end
-		return
-	end
-
-	--apply html filters
-	if mime == 'text/html' then
-		out(filter_lang(filter_comments(pop_out())))
+		handler(action, ...)
 	end
 
 	return true

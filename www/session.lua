@@ -51,7 +51,11 @@ local userinfo = once(function(uid)
 			if(pass is not null, 1, 0) as haspass,
 			googleid,
 			facebookid,
-			admin
+			admin,
+			--extra non-functional fields
+			name,
+			phone,
+			gimgurl
 		from
 			usr
 		where
@@ -129,6 +133,11 @@ local function delete_user(uid)
 	query('delete from usr where uid = ?', uid)
 end
 
+--no-password authentication: use only for debugging!
+function auth.nopass(auth)
+	return pass_email_uid(auth.email)
+end
+
 function auth.pass(auth)
 	if auth.action == 'login' then
 		local uid = pass_uid(auth.email, auth.pass)
@@ -146,15 +155,10 @@ function auth.pass(auth)
 			return nil, 'email_taken'
 		end
 		local uid = anonymous_uid(session_uid()) or create_user()
-		--first non-anonymous user is admin
+		--first non-anonymous user to be created is made admin
 		local admin = tonumber(query1([[
 			select count(1) from usr where anonymous = 0
 			]])) == 0
-		--users that admin creates are also admins
-		if not admin and session_uid() then
-			local usr = userinfo(session_uid())
-			admin = usr.admin
-		end
 		query([[
 			update usr set
 				anonymous = 0,
@@ -266,7 +270,7 @@ end
 function auth.token(auth)
 	--find the user
 	local uid = token_uid(auth.token)
-	if not uid then return end
+	if not uid then return nil, 'invalid_token' end
 
 	--remove the token because it's single use, and also to allow
 	--the user to keep forgetting his password as much as he wants.
@@ -392,10 +396,13 @@ function login(auth, switch_user)
 end
 
 uid = once(function(attr)
-	if attr then
-		return userinfo(login())[attr]
+	local uid = login()
+	if attr == '*' then
+		return userinfo(uid)
+	elseif attr then
+		return userinfo(uid)[attr]
 	else
-		return login()
+		return uid
 	end
 end)
 

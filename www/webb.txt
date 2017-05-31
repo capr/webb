@@ -1,50 +1,52 @@
-WEBB API
-------------------------------------------------------------------------------
-CONFIG ENV REQUEST OUTPUT JSON MUSTACHE LUAPAGES LUA GZIP HTML CATLISTS ACTIONS
-QUERY MAIL SESSION USERS
+# Webb Framework
 
-TODO
+## Server-side API
+
+### TODO
+
 	* markdown preprocessor
 	* print API
-	* actions cleanup: separate hidden scripts from actions, default html extension
-	*
+	* actions cleanup:
+		* separate hidden scripts from actions; remove default html extension
+		* cascade templates: html.m.lua, html.m.lp, etc.
 
+### Requires
 
-REQUIRES
-	glue cjson lfs hige lp zlib resty_mysql socket
-	main
+	glue cjson lfs hige lp `resty_mysql` socket main
 
-EXPORTS
+### Exports
+
 	glue
 
-CONFIG
+### CONFIG
 
 	config(name[, default_val]) -> val		get/set config value
 	S(name[, default_val])						get/set internationalized string
 
-ENV
+### ENVIRONMENT
 
 	once(f[, clear_cache[, k]])				memoize function for current request
 	env([t]) -> t									per-request shared environment
 
-REQUEST
+### REQUEST
 
 	headers() -> t									get all headers
 	headers(name) -> s							get a specific header
 	method() -> s 									get the method
 	method(which) -> t|f							check the method
-	GET() -> t										get all query args
-	GET(name) -> s									get a query arg
 	post() -> t										get all POST args
 	post(name) -> s								get a POST arg
-	args() -> t										parse path /a/b/... as {'a', 'b', ...}
-	args(n) -> s									parse path and return the n'th arg
-	args(name) -> s								parse query as {name -> val}
+	args() -> t										return path /a/b/... as {'a', 'b', ...}
+	args(n) -> s									return the n'th path element
+	args(name) -> s								return query arg
+	args'*?' -> t									return whole query as {name -> val}
 	absurl([path]) -> s							get the absolute url for a path
 	domain() -> s									get website domain
 	email([user]) -> s							get email address of user
 	client_ip() -> s								get client's ip address
 	lang() -> s										get current language based on ?lang=
+
+### ARG PARSING
 
 	uint_arg(s) -> n | nil						validate unsigned integer arg
 	str_arg(s) -> s | nil						validate/trim non-empty string arg
@@ -53,67 +55,63 @@ REQUEST
 	id_arg(s) -> n									decode n-s and return n
 	id_arg(n, s) -> s								encode n and s as n-s
 
-	check(ret[, err]) -> ret					exit with "file not found"
-	allow(ret[, err]) -> ret					exit with "forbidden"
+### RESPONSE
 
-OUTPUT
+	check(ret[, err]) -> ret					exit with "404 file not found"
+	allow(ret[, err]) -> ret					exit with "403 forbidden"
+	check_etag(etag)								exit with "304 not modified"
+
+### OUTPUT
 
 	out(s)											output a string
 	push_out([f])									push output function or buffer
 	pop_out() -> s									pop output function and flush it
 	record(f) -> s									run f and collect out() calls
-
-	print(...)										print, setting text/plain
-
+	print(...)										like Lua's print but uses out()
 	redirect(...)									ngx.redirect
-
 	html(s) -> s									escape html
 
-JSON
+### JSON
 
 	json(s) -> t									decode json
 	json(t) -> s									encode json
 
-FILESYSTEM
+### FILESYSTEM
 
 	basepath(file) -> path						get filesystem path (unchecked)
 	filepath(file) -> path						get filesystem path if file exists
 	readfile(file) -> s							get file contents
 
-MUSTACHE TEMPLATES
+### MUSTACHE TEMPLATES
 
 	render_string(s[, env]) -> s				render a mustache template
 	render(file[, env]) -> s					render a mustache template
 
-LUAPAGES TEMPLATES
+### LUAPAGES TEMPLATES
 
 	include_string(s, [env], [name], ...)	run LuaPages script
 	include(file, [env], ...)					run LuaPages script
 
-LUA SCRIPTS
+### LUA SCRIPTS
 
 	run_string(s, [env], args...) -> ret	run Lua script
 	run(file, [env], args...) -> ret			run Lua script
 
-GZIP FILTER
-
-	gzip_filter(f, gen_etag) -> f				run f and gzip out() calls
-
-HTML FILTERS
+### HTML FILTERS
 
 	filter_lang(s) -> s							filter <t> tags and :lang attrs
 	filter_comments(s) -> s						filter <!-- --> comments
 
-CATLISTS
+### CATLISTS
 
 	catlist(file)									render a .cat file
 
-ACTIONS
+### ACTIONS
 
 	parse_path() -> name, args...				parse URI path
 	action(name, args...) -> t|f				execute action (false if not found)
 
-QUERY
+### QUERY
 
 	quote(s) -> s									quote sql string
 	print_queries([t|f]) -> t|f				control printing of queries
@@ -125,7 +123,7 @@ QUERY
 	groupby(res, col) -> t						group rows by a column
 
 
-QUERY/DDL
+### QUERY/DDL
 
 	qsubst(typedef)								create a substitution definition
 	qmacro.<name> = f(args...)					create a macro definition
@@ -135,11 +133,11 @@ QUERY/DDL
 	droptable(name)								drop table
 	fk(tbl, col, ...)								create a foreign key
 
-MAIL
+### MAIL
 
 	sendmail(from, rcpt, subj, msg, html)	send mail via smtp to local server
 
-SESSION
+### SESSIONS
 
 	config('pass_salt', s)						random string for salting passwords in db
 	config('session_secret', s)				random string for salting session cookies
@@ -151,6 +149,7 @@ SESSION
 
 	login([auth][, switch_user]) -> uid		login
 	uid() -> uid									get current user id
+	uid(field) -> v								get current user id
 	logout() -> uid								logout, and get an anonymous uid
 	admin() -> t|f
 	editmode() -> t|f
@@ -158,6 +157,111 @@ SESSION
 	touch_usr()										update user's atime
 
 
+------------------------------------------------------------------------------
+
+## Client-side API
+
+### GLUE
+
+	memoize(f) -> f									memoize function
+	chain(funcs...) -> f(args...)					chain functions
+	merge(dst)											$.extend() without overriding
+
+### CONFIG
+
+	S(name, val)
+	C(name, val)
+
+	lang()
+
+### STRING FORMATTING
+
+	s.format(args...) -> s
+	s.trim() -> s
+
+	firstname([fullname], [email]) ->s			get name from full name or email
+
+### TIME FORMATTING
+
+	rel_time(s) -> s
+	timeago(timestamp) -> s
+	parse_date(s) -> d
+	format_time(d) -> s
+	is_today(d) -> t|f
+	shortdate(d, showtime) -> s
+	longdate(d, showtime) -> s
+	from_date(d) -> s
+	update_timeago()
+
+### PUB/SUB
+
+	listen(topic, func)
+	unlisten(topic)
+	unlisten_all()
+	broadcast(topic, data)
+
+### KEYBOARD NAVIGATION
+
+	bind_keydown(id, func)
+	unbind_keydown_all()
+
+### PERSISTENCE
+
+	store(key, value)
+	getback(key) -> value
+
+### AJAX REQUESTS
+
+	abort(id)
+	abort_all()
+	ajax(url, opt)
+
+	get(url, success, error, opt)
+	post(url, data, success, error, opt)
+
+	load_content(dst, url, success, error, opt)
+
+### TEMPLATING
+
+	render(template_name, data, dst) -> s
+	render_multi_column(template_name, items, col_count)
+	select_map(a, selv)
+
+### ADDRESS BAR, LINKS, SCROLLING
+
+	hide_nav()
+	check(truth)
+	allow(truth)
+	full_url(path, params)
+	set_state_top(top)
+	exec(url, params)
+	action = {} // {action: handler}
+	default_action = 'cat'
+	parse_url(url)
+	url_changed()
+	setlink(a, url, params, hook)
+	setlinks(dst)
+	slug(id, s)
+	intarg(s)
+	optarg(s)
+	back()
+	setscroll()
+	scroll_top()
+
+### UI PATTERNS
+
+	function follow_scroll(element_id, margin)
+
+	function upid(e, attr)
+
+	function notify(msg, cls)
+
+	.back-to-top
+
+
+------------------------------------------------------------------------------
+
+# Server-side API
 
 ## Config
 
@@ -192,18 +296,19 @@ Login using one of the supported authentication methods:
   * `{type = 'anonymous'}`: login using session cookie but logout and
   create an anonymous user if the logged in user is not anonymous.
   * `{type = 'pass', action = 'login', email = , pass = }`: login
-  to an existing user using user and password. returns `nil, 'user_pass'`
-  if the user or password is wrong.
+  to an existing user using its email and password. returns
+  `nil, 'user_pass'` if the email or password is wrong.
   * `{type = 'pass', action = 'create', email = , pass = }`: create
   a user and login to it. returns `nil, 'email_taken'` if the email is
   already taken. the admin flag is set for the first non-anonymous user
-  to be created and also if the current logged in user is an admin
-  (i.e. first user is admin and admins create admins).
+  to be created.
+  * `{type = 'nopass', email = }`: login using only user
   * `{type = 'update', email = , name = ', phone = }': update the info
   of the currently logged in user. an attempt to change the email to the
   email of a different user results in `nil, 'email_taken'`.
   * `{type = 'token', token = }`: login using a temporary token that was
   generated by the remember password form. a token can be used only once.
+  returns `nil, 'invalid_token'` if the token was not found or expired.
   * `{type = 'facebook', access_token = }`: login using facebook
   authentication. user's fields `email`, `facebookid`, `name`, and `gender`
   are also updated.
@@ -222,6 +327,14 @@ anonymous then that user is also deleted.
 Get the current user id. Same as calling `login()` without args but
 caches the uid so it can be called multiple times without actually
 performing the login.
+
+### `uid(field) -> v`
+
+Get the value of a a specific field from the user info.
+
+### `uid'*' -> t`
+
+Get full user info.
 
 ### `logout() -> uid`
 
@@ -242,3 +355,6 @@ user activity, eg. for knowing when to send those annoying "forgot items
 in your cart" emails.
 
 
+------------------------------------------------------------------------------
+
+# Client-side API
