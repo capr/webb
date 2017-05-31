@@ -111,11 +111,11 @@ function headers(h)
 	end
 end
 
-local _uri_args = once(function()
+local get_args = once(function()
 	return ngx.req.get_uri_args()
 end)
 
-local _args = once(function() --path -> action, args
+local path_args = once(function() --path -> action, args
 	local args = {}
 	for s in glue.gsplit(ngx.var.uri, '/', 2, true) do
 		args[#args+1] = ngx.unescape_uri(s)
@@ -123,15 +123,15 @@ local _args = once(function() --path -> action, args
 	return args
 end)
 
-function args(n)
-	if type(n) == 'number' then
-		return _args()[n]
-	elseif n == '*?' then
-		return _uri_args()
+function args(v)
+	if type(v) == 'number' then
+		return path_args()[v]
+	elseif v == '*?' then
+		return get_args()
 	elseif v then
-		return _uri_args()[v]
+		return get_args()[v]
 	else
-		return _args()
+		return path_args()
 	end
 end
 

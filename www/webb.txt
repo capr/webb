@@ -2,10 +2,23 @@
 
 ## HowTO
 
+Here's a very basic website sketch that uses some webb features.
+
+### Create a file named `env` with the contents:
+
+~~~
+dev
+~~~
+
+This will select the `nginx.dev.conf` nginx config file.
+
+Goto `nginx` dir and type `./restart`. Then check `http://127.0.0.1`.
+You should get a 500 error because `main.lua` (our main file) is missing.
+
 ### main.lua
 
 ~~~{.lua}
-require'webb'
+require'webb'      -- required, obviously
 require'query'     -- if using mysql
 require'sendmail'  -- if sending mail
 require'session'   -- if needing session tracking and/or user accounts
@@ -13,12 +26,20 @@ require'config'    -- config.lua file, see below
 require'secrets'   -- secrets.lua file, see below
 pp = require'pp'   -- optional, for debugging
 
-return function()
-	touch_usr() --update usr.atime on all dynamic requests
-	if not action(unpack(args())) then
+return function()  --called for every URL. make your routing strategy here.
+
+	-- get the split path: for path `/a/b` returns `{'a', 'b'}`
+	local path = args()
+
+	--action-based routing: looks for `a.html.lua`, `a.html.lp` and `a.html.cat`
+	if not action(unpack(path)) then
+		--if an action was not found and an image file was requested,
+		--redirect to `/0.png` with 302-moved-temporarily,
+		--in order to avoid the dreaded broken image icon.
 		check_img()
 	end
-	check(false)
+
+	check(false) --exit with 404
 end
 ~~~
 
@@ -49,7 +70,7 @@ config('session_secret', '<any random string>') --for encrypting cookies
 config('db_pass',        '<database password>') --the mysql password
 ~~~
 
-### home.html.lua, the homepage action (which responds to '/')
+### home.html.lua, the homepage action (which also responds to '/')
 
 ~~~{.lua}
 local title = 'Home - My Website'
@@ -121,9 +142,9 @@ main.js             --your own app code
 ### main.js, the client-side app code (if any)
 
 ~~~{.js}
-analytics_init()    --if using analytics
-login()             --if using sessions and login
-url_changed()       --execute the current action (if using client-side actions)
+analytics_init()    --if using analytics: ping analytics with a page view
+login()             --if using sessions and user accounts: get a session going
+url_changed()       --if using client-side actions: execute the current action
 ~~~
 
 ------------------------------------------------------------------------------
@@ -294,15 +315,15 @@ url_changed()       --execute the current action (if using client-side actions)
 
 ### CONFIG
 
-	S(name, val)
-	C(name, val)
+	S(name, val)										for internationalized strings
+	C(name, val)										for global config options
 
-	lang()
+	lang()												current language from ?lang= or default
 
 ### STRING FORMATTING
 
-	s.format(args...) -> s
-	s.trim() -> s
+	s.format(args...) -> s							'{0} ... {1}' formatting
+	s.trim() -> s										trim string spaces
 
 	firstname([fullname], [email]) ->s			get name from full name or email
 
@@ -316,41 +337,41 @@ url_changed()       --execute the current action (if using client-side actions)
 	shortdate(d, showtime) -> s
 	longdate(d, showtime) -> s
 	from_date(d) -> s
-	update_timeago()
+	update_timeago()									update all .timeago elements
 
 ### PUB/SUB
 
-	listen(topic, func)
-	unlisten(topic)
-	unlisten_all()
-	broadcast(topic, data)
+	listen(topic, func)								add an event listener
+	unlisten(topic)									remove event listeners on a topic
+	unlisten_all()										remove all listeners for .current_action
+	broadcast(topic, data)							broadcast data to all listeners
 
 ### KEYBOARD NAVIGATION
 
-	bind_keydown(id, func)
-	unbind_keydown_all()
+	bind_keydown(id, func)							add a keydown handler
+	unbind_keydown_all()								remove all keydown handlers
 
 ### PERSISTENCE
 
-	store(key, value)
-	getback(key) -> value
+	store(key, value)									store a value in the local store
+	getback(key) -> value							get back the stored value
 
 ### AJAX REQUESTS
 
-	abort(id)
-	abort_all()
-	ajax(url, opt)
+	ajax(url, opt) -> id								start an ajax request
+	abort(id)											abort an ajax request
+	abort_all()											abort all ajax requests
 
-	get(url, success, error, opt)
-	post(url, data, success, error, opt)
+	get(url, success, error, opt) -> id			simple API for ajax GET requests
+	post(url, data, success, error, opt)->id	simple API for ajax POST requests
 
-	load_content(dst, url, success, error, opt)
+	load_content(dst, url, success, error, opt)	load content dynamically
 
 ### TEMPLATING
 
-	render(template_name, data, dst) -> s
-	render_multi_column(template_name, items, col_count)
-	select_map(a, selv)
+	render(template_name, data, dst) -> s		render a template to an element
+	render_multi_column(template_name, items, col_count)  multi-column templates
+	select_map(a, selv)								generate data to generate <select> elements
 
 ### ADDRESS BAR, LINKS, SCROLLING
 
