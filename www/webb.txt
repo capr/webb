@@ -14,7 +14,7 @@ require'secrets'   -- secrets.lua file, see below
 pp = require'pp'   -- optional, for debugging
 
 return function()
-	touch_usr() --update usr.atime on all requests, except image requests.
+	touch_usr() --update usr.atime on all dynamic requests
 	if not action(unpack(args())) then
 		check_img()
 	end
@@ -49,8 +49,84 @@ config('session_secret', '<any random string>') --for encrypting cookies
 config('db_pass',        '<database password>') --the mysql password
 ~~~
 
-###
+### home.html.lua, the homepage action (which responds to '/')
 
+~~~{.lua}
+local title = 'Home - My Website'
+local content = [[
+	... the page's html content ...
+]]
+
+run('main_template.lua', env{title = title, content = content})
+~~~
+
+### main_template.lua, the main template
+
+~~~{.lua}
+local t = {
+	lang = lang(),       --taken from `?lang=` or default
+	title = title,       --taken from env() call above
+	content = content,   --taken from env() call above
+}
+
+local template = [[
+<!DOCTYPE html>
+<html lang={{lang}}>
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title>{{title}}</title>
+	<link rel="stylesheet" type="text/css" href="/all.css">
+	<script src="/all.js"></script>
+</head>
+<body>
+	<div id=content_section>
+		{{{content}}}
+	</div>
+</body>
+</html>
+]]
+
+out(render_string(template, t))
+~~~
+
+### all.css.cat, concatenating all css files and serving them as one
+
+~~~
+font-awesome.css    --if using font awesome
+jquery.toasty.css   --if using toasty
+reset.css           --standard css reset
+main.css            --your own css
+~~~
+
+### all.js.cat, concatenating all js files and serving them as one
+
+~~~
+jquery.js           --if using webb.js
+jquery.history.js   --if using client-side URL routing
+jquery.toasty.js    --if using toasty notifications
+jquery.easing.js    --if using easing transitions
+jquery.validate.js  --if using client-side validation
+jquery.unslider.js  --if using unslider
+webb.js             --if using any client-side features
+analytics.js        --if using analytics
+facebook.js         --if using facebook authentication
+google.js           --if using g+ authentication
+account.js          --if using the standard account widget TODO
+resetpass.js        --if using the sandard reset password widget TODO
+config.js           --automatically generated
+main.js             --your own app code
+~~~
+
+### main.js, the client-side app code (if any)
+
+~~~{.js}
+analytics_init()    --if using analytics
+login()             --if using sessions and login
+url_changed()       --execute the current action (if using client-side actions)
+~~~
+
+------------------------------------------------------------------------------
 
 ## Server-side API
 
