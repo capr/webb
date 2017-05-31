@@ -335,7 +335,7 @@ end
 --filesystem API -------------------------------------------------------------
 
 function basepath(file)
-	return config('basepath') .. '/' .. file
+	return config('basepath', '../www') .. '/' .. file
 end
 
 local lfs = require'lfs'

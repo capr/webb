@@ -17,7 +17,7 @@ local function connect()
 	db:set_timeout(config('db_conn_timeout', 3) * 1000)
 	assert_db(db:connect{
 		host     = config('db_host', '127.0.0.1'),
-		port     = 3306,
+		port     = config('db_port', 3306),
 		database = config('db_name'),
 		user     = config('db_user', 'root'),
 		password = config('db_pass'),

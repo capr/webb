@@ -1,18 +1,67 @@
 # Webb Framework
 
+## HowTO
+
+### main.lua
+
+~~~{.lua}
+require'webb'
+require'query'     -- if using mysql
+require'sendmail'  -- if sending mail
+require'session'   -- if needing session tracking and/or user accounts
+require'config'    -- config.lua file, see below
+require'secrets'   -- secrets.lua file, see below
+pp = require'pp'   -- optional, for debugging
+
+return function()
+	touch_usr() --update usr.atime on all requests, except image requests.
+	if not action(unpack(args())) then
+		check_img()
+	end
+	check(false)
+end
+~~~
+
+### config.lua
+
+~~~{.lua}
+config('basepath',  '../www')     --where www is relative to nginx wrapper script
+config('lang',      'en')         --default language
+config('smtp_host', '127.0.0.1')  --the ip address of the local smtp server
+config('db_host',   '127.0.0.1')  --the ip address of the local mysql server
+config('db_port',   3306)         --the port of the local mysql server
+config('db_name',   '<db name>')  --the mysql database name
+config('db_user',   'root')       --the mysql user
+config('db_conn_timeout', 3)      --connection timeout in seconds
+config('db_query_timeout', 30)    --query timeout in seconds
+
+
+config('facebook_app_id',  '<fb app id>')         --fb app id for fb authentication
+config('google_client_id', '<google client id>')  --google client id for g+ authentication
+config('analytics_ua',     '<analytics UA code>') --google analytics UA code for analytics
+~~~
+
+### secrets.lua, not to be added to git
+
+~~~{.lua}
+config('pass_salt',      '<any random string>') --for encrypting passwords in the database
+config('session_secret', '<any random string>') --for encrypting cookies
+config('db_pass',        '<database password>') --the mysql password
+~~~
+
+###
+
+
 ## Server-side API
 
 ### TODO
 
 	* markdown preprocessor
-	* print API
-	* actions cleanup:
-		* separate hidden scripts from actions; remove default html extension
-		* cascade templates: html.m.lua, html.m.lp, etc.
+	* cascaded actions: html.m.lua, html.m.lp, etc.
 
 ### Requires
 
-	glue cjson lfs hige lp `resty_mysql` socket main
+	glue cjson lfs hige lp socket
 
 ### Exports
 

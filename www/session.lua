@@ -1,6 +1,7 @@
 local random_string = require'resty_random'
-local session_ = require'resty_session'
-local glue = require'glue'
+local resty_session = require'resty_session'
+
+require'query'
 
 local function fullname(firstname, lastname)
 	return glue.trim((firstname or '')..' '..(lastname or ''))
@@ -9,12 +10,12 @@ end
 --session cookie -------------------------------------------------------------
 
 session = once(function()
-	session_.cookie.persistent = true
-	session_.check.ssi = false --ssi will change after browser closes
-	session_.check.ua = false  --user could upgrade the browser
-	session_.cookie.lifetime = 2 * 365 * 24 * 3600 --2 years
-	session_.secret = config'session_secret'
-	return assert(session_.start())
+	resty_session.cookie.persistent = true
+	resty_session.check.ssi = false --ssi will change after browser closes
+	resty_session.check.ua = false  --user could upgrade the browser
+	resty_session.cookie.lifetime = 2 * 365 * 24 * 3600 --2 years
+	resty_session.secret = config'session_secret'
+	return assert(resty_session.start())
 end)
 
 function session_uid()
