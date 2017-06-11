@@ -1,0 +1,2 @@
+sudo cp -f php5-fpm.conf /etc/php5/fpm/pool.d/dojo.conf
+sudo service php5-fpm restart
