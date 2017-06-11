@@ -3,8 +3,8 @@
 cd "$(dirname "$(readlink -f "$0")")" || exit 1
 
 OPENRESTY_DIR="$PWD/../openresty"
-WEBB_DIR="$PWD/www"
 LUAPOWER_DIR="$PWD/../luapower"
+WEBB_DIR="$PWD/www"
 
 [ "$(uname -m)" != x86_64 ] && P=linux32 || P=linux64
 
