@@ -1,17 +1,11 @@
 #!/bin/sh
 
-OPENRESTY_DIR=/usr/local/openresty
-WEBB_DIR=../www
-LUAPOWER_DIR=../..
+cd "$(dirname "$(readlink -f "$0")")" || exit 1
 
-# ------------------------------------------------------------
+OPENRESTY_DIR="$PWD/../openresty"
+WEBB_DIR="$PWD/www"
+LUAPOWER_DIR="$PWD/../luapower"
 
-DIR="$(dirname "$(readlink -f "$0")")"
-
-[ "$ENV" ] || {
-    [ -f ../env ] || { echo "../env file not found."; exit 1; }
-    ENV=`cat ../env`
-}
 [ "$(uname -m)" != x86_64 ] && P=linux32 || P=linux64
 
 WEBBL="$DIR/$WEBB_DIR/?.lua"
@@ -26,8 +20,6 @@ SYSB="/usr/local/lib"
 export LUA_PATH="$WEBBL;$LPBL;$LPL;$ORL"
 export LUA_CPATH="$LPBB;$ORB"
 export LD_LIBRARY_PATH="$LPB:$SYSB"
+export WEBB_DIR
 
-mkdir -p "$DIR/logs"
-
-sudo -E "$OPENRESTY_DIR/nginx/sbin/nginx" -p "$DIR" \
-    -c "$DIR/nginx.$ENV.conf" "$@"
+exec "$OPENRESTY_DIR/nginx/sbin/nginx" -p "$PWD" -c "$PWD/nginx.conf" "$@"

@@ -335,7 +335,7 @@ end
 --filesystem API -------------------------------------------------------------
 
 function basepath(file)
-	return config('basepath', '../www') .. '/' .. file
+	return assert(config'webb_dir') .. '/' .. file
 end
 
 local lfs = require'lfs'

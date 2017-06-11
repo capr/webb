@@ -13,4 +13,10 @@ types {
     application/pdf                       pdf;
     application/zip                       zip;
     application/x-gzip                    gz;
+    application/x-gzip                    tgz;
+    application/x-xz                      xz;
+    application/x-bz2                     bz2;
+    text/plain                            sh;
+    application/x-tar                     tar;
+    audio/mpeg                            mp3;
 }

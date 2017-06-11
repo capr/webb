@@ -1,6 +1,5 @@
 git-up.cmd
-nginx/*_temp
-nginx/logs/
-nginx/ssl/
-env
+*_temp
+logs/
+secrets.conf
 www/secrets.lua
