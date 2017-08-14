@@ -2,9 +2,10 @@
 
 ## Install
 
+
 ### Install Ubuntu 17 packages
 
-~~~
+
 	sudo apt-get update
 	sudo apt-get install
 		build-essential \
@@ -15,30 +16,39 @@
 		mysql-server \
 		php-fpm \
 		php-mysql
-~~~
+
 
 This will install mysql 5.7 and php7.
+
 
 #### Install OpenResty
 
 Download and unpack the OpenResty 1.11.2.4 sources, then:
 
-~~~
-./configure --prefix=/home/<user>/openresty
-make
-make install
-~~~
+
+	./configure --prefix=/home/<user>/openresty
+	make
+	make install
+
+
+### Install a php-fpm pool for your website
+
+
+	./install-php-fpm-pool <website-name>
+
 
 ### Reset MySQL root password
 
-~~~
-sudo mysql -u root
 
-DROP USER 'root'@'localhost';
-CREATE USER 'root'@'%' IDENTIFIED BY '';
-GRANT ALL PRIVILEGES ON *.* TO 'root'@'%';
-FLUSH PRIVILEGES;
-~~~
+	sudo mysql -u root
+
+	DROP USER 'root'@'localhost';
+	CREATE USER 'root'@'%' IDENTIFIED BY '';
+	GRANT ALL PRIVILEGES ON *.* TO 'root'@'%';
+	FLUSH PRIVILEGES;
+
+
+------------------------------------------------------------------------------
 
 ## HowTO
 
@@ -185,6 +195,7 @@ analytics_init()    --if using analytics: ping analytics with a page view
 login()             --if using sessions and user accounts: get a session going
 url_changed()       --if using client-side actions: execute the current action
 ~~~
+
 
 ------------------------------------------------------------------------------
 
