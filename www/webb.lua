@@ -93,9 +93,9 @@ end)
 
 function method(which)
 	if which then
-		return _method():upper() == which:upper()
+		return _method():lower() == which:lower()
 	else
-		return _method()
+		return _method():lower()
 	end
 end
 
@@ -111,43 +111,35 @@ function headers(h)
 	end
 end
 
-local get_args = once(function()
-	return ngx.req.get_uri_args()
-end)
-
-local path_args = once(function() --path -> action, args
-	local args = {}
+local _args = once(function()
+	local t = {}
 	for s in glue.gsplit(ngx.var.uri, '/', 2, true) do
-		args[#args+1] = ngx.unescape_uri(s)
+		t[#t+1] = ngx.unescape_uri(s)
 	end
-	return args
+	glue.update(t, ngx.req.get_uri_args()) --add in the query args
+	return t
 end)
 
 function args(v)
-	if type(v) == 'number' then
-		return path_args()[v]
-	elseif v == '*?' then
-		return get_args()
-	elseif v then
-		return get_args()[v]
+	if v then
+		return _args()[v]
 	else
-		return path_args()
+		return _args()
 	end
 end
 
 local _post_args = once(function()
-	if method() ~= 'POST' then return end
+	if not method'post' then return end
 	ngx.req.read_body()
 	return ngx.req.get_post_args()
 end)
 
 function post(v)
-	local t = _post_args()
-	if not t then return end
 	if v then
-		return t[v]
+		local t = _post_args()
+		return t and t[v]
 	else
-		return t
+		return _post_args()
 	end
 end
 

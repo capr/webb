@@ -1,18 +1,19 @@
-#!/bin/sh
+#!/bin/bash
 
-cd "$(dirname "$(readlink -f "$0")")" || exit 1
+cd "$(dirname "$0")" || exit 1
 
-OPENRESTY_DIR="$PWD/../openresty"
-LUAPOWER_DIR="$PWD/../luapower"
-WEBB_DIR="$PWD/www"
+DIR="$PWD"
+OPENRESTY_DIR="$DIR/../openresty"; cd "$OPENRESTY_DIR"; OPENRESTY_DIR="$PWD"; cd "$DIR"
+LUAPOWER_DIR="$DIR/../luapower";   cd "$LUAPOWER_DIR"; LUAPOWER_DIR="$PWD"; cd "$DIR"
+WEBB_DIR="$DIR/www"
 
 [ "$(uname -m)" != x86_64 ] && P=linux32 || P=linux64
 
-WEBBL="$DIR/$WEBB_DIR/?.lua"
-LPB="$DIR/$LUAPOWER_DIR/bin/$P"
+WEBBL="$WEBB_DIR/?.lua"
+LPB="$LUAPOWER_DIR/bin/$P"
 LPBL="$LPB/lua/?.lua"
 LPBB="$LPB/clib/?.so"
-LPL="$DIR/$LUAPOWER_DIR/?.lua"
+LPL="$LUAPOWER_DIR/?.lua"
 ORL="$OPENRESTY_DIR/lualib/?.lua"
 ORB="$OPENRESTY_DIR/lualib/?.so"
 SYSB="/usr/local/lib"
@@ -22,4 +23,4 @@ export LUA_CPATH="$LPBB;$ORB"
 export LD_LIBRARY_PATH="$LPB:$SYSB"
 export WEBB_DIR
 
-exec "$OPENRESTY_DIR/nginx/sbin/nginx" -p "$PWD" -c "$PWD/nginx.conf" "$@"
+exec "$OPENRESTY_DIR/nginx/sbin/nginx" -p "$DIR" -c "$DIR/nginx.conf" "$@"

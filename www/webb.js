@@ -296,7 +296,6 @@ function abort_all() {
 function ajax(url, opt) {
 	opt = opt || {}
 	var id = opt.id
-
 	if (id)
 		abort(id)
 
@@ -325,7 +324,7 @@ function ajax(url, opt) {
 			}
 		},
 		type: type,
-		data: data,
+		data: data
 	})
 
 	id = id || xhr
@@ -391,6 +390,12 @@ function load_content(dst, url, success, error, opt) {
 }
 
 // templating ----------------------------------------------------------------
+
+function load_templates() {
+	get('/templates.html', function(s) {
+		$('#templates').html(s)
+	})
+}
 
 function template_object(name) {
 	return $('#' + name + '_template')
