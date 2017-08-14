@@ -1,2 +1,17 @@
-sudo cp -f php5-fpm.conf /etc/php5/fpm/pool.d/dojo.conf
-sudo service php5-fpm restart
+#!/bin/bash
+[ "$1" ] || { echo "Usage: $0 <website-name>"; exit 1; }
+
+if [ -d /etc/php5/fpm ]; then
+    CONF="/etc/php5/fpm/pool.d/$1.conf"
+    RESTART="sudo service php5-fpm restart"
+elif [ -d /etc/php/7.0/fpm ]; then
+    CONF="/etc/php/7.0/fpm/pool.d/$1.conf"
+    RESTART="sudo /etc/init.d/php7.0-fpm restart"
+else
+    echo "PHP FPM not found"
+    exit 1
+fi
+
+sed "s/WEBSITE/$1/g; s/USER/$USER/g;" php-fpm.conf > php-fpm.$1.conf
+sudo mv -f php-fpm.$1.conf "$CONF"
+$RESTART
