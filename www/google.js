@@ -2,7 +2,7 @@
 var force_prompt = false
 function google_login(success, fail) {
 	var params = {
-		clientid: C('google_client_id'),
+		clientid: config('google_client_id'),
 		scope:    'https://www.googleapis.com/auth/plus.login email',
 		requestvisibleactions: 'http://schema.org/AddAction',
 		cookiepolicy: 'single_host_origin',

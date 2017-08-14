@@ -173,8 +173,7 @@ function uint_arg(s)
 end
 
 function str_arg(s)
-	if not s then return end
-	s = glue.trim(s)
+	s = glue.trim(s or '')
 	return s ~= '' and s or nil
 end
 
@@ -184,11 +183,12 @@ function enum_arg(s, ...)
 			return s
 		end
 	end
+	return nil
 end
 
 function list_arg(s, arg_f)
 	local s = str_arg(s)
-	if not s then return end
+	if not s then return nil end
 	arg_f = arg_f or str_arg
 	local t = {}
 	for s in glue.gsplit(s, ',') do
@@ -198,7 +198,7 @@ function list_arg(s, arg_f)
 end
 
 function id_arg(id, s)
-	if not id then return end
+	if not id then return nil end
 	if type(id) == 'string' then --decode
 		return tonumber((id:gsub('%-.*$', '')))
 	else --encode
@@ -272,6 +272,7 @@ end
 
 function out(s)
 	local outfunc = ngx.ctx.outfunc or default_outfunc
+	if s == nil then return end
 	outfunc(tostring(s))
 end
 
@@ -475,7 +476,7 @@ local action_handlers = {
 		catlist(action..'.cat', ...)
 	end,
 	lua = function(action, ...)
-		run(action..'.lua', nil, ...)
+		return run(action..'.lua', nil, ...)
 	end,
 	lp = function(action, ...)
 		include(action..'.lp')
@@ -524,10 +525,12 @@ local mime_type_filters = {
 	['application/json'] = json_filter,
 }
 
+config('default_action', 'home') --set it here so we can see it client-side
+
 function action(action, ...)
 
 	if action == '' then
-		action = 'home'
+		action = config'default_action'
 	end
 
 	--set mime type based on action's file extension (default is html).
@@ -539,7 +542,7 @@ function action(action, ...)
 	local mime = assert(mime_types[ext])
 
 	local file, handler = unpack(actionfile(action))
-	if not file then return end
+	if not file then return false end
 
 	ngx.header.content_type = mime
 

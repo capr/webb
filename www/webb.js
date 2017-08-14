@@ -1,35 +1,4 @@
 
-// glue ----------------------------------------------------------------------
-
-function memoize(f) {
-	var cache = {}
-	return function(arg) {
-		if (arg in cache)
-			return cache[arg]
-		return cache[arg] = f(arg)
-	}
-}
-
-// return a function that calls a bunch of functions in order
-// with the same args as passed to that function.
-function chain() {
-	var funcs = Array.prototype.slice.call(arguments)
-	return function() {
-		for (var i = 0; i < funcs.length; i++)
-			funcs[i].apply(null, arguments)
-	}
-}
-
-// $.extend() without overriding.
-function merge(dst) {
-	for (var i = 1; i < arguments.length; i++) {
-		var src = arguments[i]
-		for (var k in src)
-			if (!dst.hasOwnProperty(k))
-				dst[k] = src[k]
-	}
-}
-
 // global strings and config values ------------------------------------------
 
 // global S() for internationalizing strings.
@@ -40,9 +9,10 @@ function S(name, val) {
 	return S_[name]
 }
 
-// global C() for general config values.
+// global config() for general config values.
+// some of the values come from the server (see config.js.lua).
 var C_ = {}
-function C(name, val) {
+function config(name, val) {
 	if (val && !C_[name])
 		C_[name] = val
 	if (typeof(C_[name]) === 'undefined')
@@ -52,7 +22,7 @@ function C(name, val) {
 
 // global lang() for conditionally setting S() values based on language.
 function lang() {
-	return document.documentElement.lang
+	return document.documentElement.lang || config('lang')
 }
 
 // string formatting ---------------------------------------------------------
@@ -355,14 +325,19 @@ function post(url, data, success, error, opt) {
 function load_content(dst, url, success, error, opt) {
 
 	var dst = $(dst)
-	var slow_watch = setTimeout(function() {
-		dst.html('')
-		dst.addClass('loading')
-	}, C('slow_loading_feedback_delay', 1500))
+	function set_loading() {
+		return dst.html('<div class="loading_outer">'+
+						'<div class="loading_middle">'+
+							'<div class="loading_inner loading">'+
+							'</div>'+
+						'</div>'+
+					'</div>').find('.loading_inner')
+	}
+	var slow_watch = setTimeout(set_loading, config('slow_loading_feedback_delay', 1500))
 
 	var done = function() {
 		clearTimeout(slow_watch)
-		dst.removeClass('loading')
+		dst.html('')
 	}
 
 	return ajax(url,
@@ -375,11 +350,12 @@ function load_content(dst, url, success, error, opt) {
 			},
 			error: function(xhr) {
 				done()
-				dst.html('<a><img src="/load_error.gif"></a>').find('a')
+				set_loading()
+					.removeClass('loading')
+					.addClass('loading_error')
 					.attr('title', xhr.responseText)
 					.click(function() {
-						dst.html('')
-						dst.addClass('loading')
+						set_loading()
 						load_content(dst, url, success, error)
 					})
 				if (error)
@@ -389,12 +365,35 @@ function load_content(dst, url, success, error, opt) {
 		}, opt))
 }
 
+// ajax request on the main pane: restore scroll position.
+function load_main(url, success, error, opt) {
+	load_content('#main', url,
+		function(data) {
+			if (success)
+				success(data)
+			setscroll()
+		},
+		error,
+		opt)
+}
+
 // templating ----------------------------------------------------------------
 
-function load_templates() {
-	get('/templates.html', function(s) {
-		$('#templates').html(s)
-	})
+var templates_loaded = false
+
+function load_templates(success) {
+	if (templates_loaded == lang()) {
+		if (success)
+			success()
+	} else {
+		var templates_html = config('templates_action', 'templates.html')
+		get(full_url('/'+templates_html), function(s) {
+			$('#templates').html(s)
+			templates_loaded = lang()
+			if (success)
+				success()
+		})
+	}
 }
 
 function template_object(name) {
@@ -405,7 +404,7 @@ function load_partial_(name) {
 	return template_object(name).html()
 }
 
-function render(template_name, data, dst) {
+function render_(template_name, data, dst) {
 	var t = template_object(template_name).html()
 	var s = Mustache.render(t, data || {}, load_partial_)
 	if (dst) {
@@ -416,6 +415,12 @@ function render(template_name, data, dst) {
 		setlinks(dst)
 	} else
 		return s
+}
+
+function render(template_name, data, dst) {
+	load_templates(function() {
+		render_(template_name, data, dst)
+	})
 }
 
 function render_multi_column(template_name, items, col_count) {
@@ -448,7 +453,6 @@ function select_map(a, selv) {
 function hide_nav() {
 	$('#sidebar').hide()
 	$('#homepage').hide()
-	$('#selected_filters').css('visibility', 'hidden')
 }
 
 function check(truth) {
@@ -469,7 +473,7 @@ $(function() {
 function full_url(path, params) {
 	// encode params and add lang param to url if needed.
 	var lang_ = lang()
-	var explicit_lang = lang_ != C('default_lang', 'en')
+	var explicit_lang = lang_ != config('lang')
 	var url = path
 	if (params || explicit_lang) {
 		if (explicit_lang)
@@ -494,27 +498,29 @@ function exec(url, params) {
 }
 
 var action = {} // {action: handler}
-var default_action = 'cat'
 
 function parse_url(url) {
 	var args = url.split('/')
 	if (args[0]) return // not an action url
 	args.shift() // remove ""
-	var act = args[0] || default_action
+	var act = args[0] || config('default_action')
 	args.shift() // remove the action
+	act = act.replace('-', '_') // make it easier to declare actions
 	var handler = action[act] // find a handler
-	if (!handler) { // no handler, find a static template
-		var template = template_object(act).length ? act : 'not_found'
-		handler = function() {
-			hide_nav()
-			render(template, null, '#main')
+	if (!handler) {
+		// no handler, find a static template
+		if (template_object(act).length) {
+			handler = function() {
+				hide_nav()
+				render(act, null, '#main')
+			}
 		}
 	} else {
 		for (var i = 0; i < args.length; i++)
 			args[i] = decodeURIComponent(args[i])
 	}
 	return {
-		action: action,
+		action: act,
 		handler: handler,
 		args: args,
 	}

@@ -1,7 +1,10 @@
 local function C(name)
-	out('C(\''..name..'\', '..pp.format(config(name))..')\n')
+	out('config(\''..name..'\', '..pp.format(config(name))..')\n')
 end
 
+C'lang'
+C'default_action'
+C'templates_action'
 C'facebook_app_id'
 C'analytics_ua'
 C'google_client_id'

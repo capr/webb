@@ -96,7 +96,8 @@ config.lua
 
 Note: only need to add the lines for which the value is different than below.
 
-	config('lang',      'en')         --default language
+	config('lang',      'en')         --the default language
+	config('default_action', 'home')  --the action to run for the '/' path
 
 	config('db_host',   '127.0.0.1')  --the ip address of the local mysql server
 	config('db_port',   3306)         --the port of the local mysql server
@@ -280,6 +281,8 @@ MUSTACHE TEMPLATES
 
 	render_string(s[, env]) -> s              render a mustache template
 	render(file[, env]) -> s                  render a mustache template
+	template(name) -> s                       get a template from templates.html
+	render_template(name[, env]) -> s         render a template from templates.html
 
 LUAPAGES TEMPLATES
 
@@ -413,7 +416,7 @@ AJAX REQUESTS
 
 TEMPLATING
 
-	render(template_name, data, dst) -> s     render a template to an element
+	render(template_name, data[, dst]) -> [s] render a template to an element
 	render_multi_column(template_name, items, col_count)  multi-column templates
 	select_map(a, selv)                       generate data to generate <select> elements
 
@@ -463,18 +466,18 @@ Get/set config value.
 Get/set internationalized string.
 
 
-Enviornment
+Environment
 
 	once(f[, clear_cache[, k]])
 
 Memoize 0-arg or 1-arg function for current request. If clear_cache is
 true, then clear the cache (either for the entire function or for arg `k`).
 
-	env() -> t
+	env([t]) -> t
 
 Per-request shared environment. Scripts run with `render()`,
-`include()`, `run()` run in this environment by default.
-
+`include()`, `run()` run in this environment by default. If the `t` argument
+is given, an inherited environment is created.
 
 Sessions
 

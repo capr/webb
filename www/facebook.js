@@ -24,9 +24,9 @@ function facebook_login(success, error, opt) {
 }
 
 window.fbAsyncInit = function() {
-	if (!C('facebook_app_id', false)) return
+	if (!config('facebook_app_id', false)) return
 	FB.init({
-		appId   : C('facebook_app_id'),
+		appId   : config('facebook_app_id'),
 		cookie  : true,  // enable cookies to allow the server to access the session
 		xfbml   : true,  // parse social plugins on this page
 		version : 'v2.1' // use version 2.1
