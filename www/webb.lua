@@ -1,5 +1,5 @@
---webb framework
---written by Cosmin Apreutesei. Public Domain.
+--Webb Framework
+--Written by Cosmin Apreutesei. Public Domain.
 
 glue = require'glue'
 

@@ -1,9 +1,0 @@
-git-up.cmd
-*_temp
-logs/
-www/secrets.lua
-ngx
-mime.types
-fastcgi_params
-ngx-*
-nginx.*

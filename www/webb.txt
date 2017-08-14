@@ -1,9 +1,12 @@
-# Webb Framework
 
-## Install
+# Webb Framework Documentation
+# Written by Cosmin Apreutesei. Public Domain.
 
 
-### Install Ubuntu 17 packages
+Install
+------------------------------------------------------------------------------
+
+Install Ubuntu 17 packages
 
 
 	sudo apt-get update
@@ -18,26 +21,25 @@
 		php-mysql
 
 
-This will install mysql 5.7 and php7.
+	This will install mysql 5.7 and php7.
 
 
-#### Install OpenResty
+Install OpenResty
 
-Download and unpack the OpenResty 1.11.2.4 sources, then:
-
-
-	./configure --prefix=/home/<user>/openresty
-	make
-	make install
+	Download and unpack the OpenResty 1.11.2.4 sources, then:
 
 
-### Install a php-fpm pool for your website
+		./configure --prefix=/home/<user>/openresty
+		make
+		make install
 
 
-	./install-php-fpm-pool
+	Install a php-fpm pool to be used by all webb instances:
+
+		./install-php-fpm-pool
 
 
-### Reset MySQL root password
+Reset MySQL root password
 
 
 	sudo mysql -u root
@@ -48,377 +50,374 @@ Download and unpack the OpenResty 1.11.2.4 sources, then:
 	FLUSH PRIVILEGES;
 
 
-------------------------------------------------------------------------------
 
-## HowTO
+HowTO
+------------------------------------------------------------------------------
 
 Here's a very basic website sketch that uses some webb features.
 
-Create a file `nginx-server.conf` and type `listen 127.0.0.1:8882` in it.
-Type `./ngx-start`. Then check `http://127.0.0.1:8882`.
+Create a file `nginx-server.conf` and type in it:
+
+	listen 127.0.0.1:8882;
+
+Type `./ngx-start` then check `http://127.0.0.1:8882`.
+
 You should get a 500 error because `main.lua` (our main file) is missing.
 
-### main.lua
 
-~~~{.lua}
-require'webb'      -- required, obviously
-require'query'     -- if using mysql
-require'session'   -- if needing session tracking and/or user accounts
-require'sendmail'  -- if sending mail
-require'config'    -- config.lua file, see below
-require'secrets'   -- secrets.lua file, see below
-pp = require'pp'   -- optional, for debugging
+main.lua
 
-return function()  --called for every URL. make your routing strategy here.
+	require'webb'      -- required, obviously
+	require'query'     -- if using mysql
+	require'session'   -- if needing session tracking and/or user accounts
+	require'sendmail'  -- if sending mail
+	require'config'    -- config.lua file, see below
+	require'secrets'   -- secrets.lua file, see below
+	pp = require'pp'   -- optional, for debugging
 
-	-- get the split path: for path `/a/b` returns `{'a', 'b'}`
-	local path = args()
+	return function()  --called for every URL. make your routing strategy here.
 
-	--action-based routing: looks for `a.html.lua`, `a.html.lp` and `a.html.cat`
-	if not action(unpack(path)) then
-		--if an action was not found and an image file was requested,
-		--redirect to `/0.png` with 302-moved-temporarily,
-		--in order to avoid the dreaded broken image icon.
-		check_img()
+		-- get the split path: for path `/a/b` returns `{'a', 'b'}`
+		local path = args()
+
+		--action-based routing: looks for `a.html.lua`, `a.html.lp` and `a.html.cat`
+		if not action(unpack(path)) then
+			--if an action was not found and an image file was requested,
+			--redirect to `/0.png` with 302-moved-temporarily,
+			--in order to avoid the dreaded broken image icon.
+			check_img()
+		end
+
+		check(false) --exit with 404
 	end
 
-	check(false) --exit with 404
-end
-~~~
 
-### config.lua
+config.lua
 
-Note: only add the lines for which the value is different than below.
+Note: only need to add the lines for which the value is different than below.
 
-~~~{.lua}
-config('lang',      'en')         --default language
+	config('lang',      'en')         --default language
 
-config('db_host',   '127.0.0.1')  --the ip address of the local mysql server
-config('db_port',   3306)         --the port of the local mysql server
-config('db_name',   '<db name>')  --the mysql database name
-config('db_user',   'root')       --the mysql user
-config('db_conn_timeout', 3)      --connection timeout in seconds
-config('db_query_timeout', 30)    --query timeout in seconds
+	config('db_host',   '127.0.0.1')  --the ip address of the local mysql server
+	config('db_port',   3306)         --the port of the local mysql server
+	config('db_name',   '<db name>')  --the mysql database name
+	config('db_user',   'root')       --the mysql user
+	config('db_conn_timeout', 3)      --connection timeout in seconds
+	config('db_query_timeout', 30)    --query timeout in seconds
 
-config('pass_token_lifetime', 3600) --remember-password token lifetime
-config('pass_token_maxcount', 2)  --max remember-password tokens allowed
+	config('pass_token_lifetime', 3600) --remember-password token lifetime
+	config('pass_token_maxcount', 2)  --max remember-password tokens allowed
 
-config('smtp_host', '127.0.0.1')  --the ip address of the local smtp server
-config('smtp_port', 25)           --the port address of the local smtp server
+	config('smtp_host', '127.0.0.1')  --the ip address of the local smtp server
+	config('smtp_port', 25)           --the port address of the local smtp server
 
-config('facebook_app_id',  '<fb app id>')         --fb app id for fb authentication
-config('google_client_id', '<google client id>')  --google client id for g+ authentication
-config('analytics_ua',     '<analytics UA code>') --google analytics UA code for analytics
-~~~
-
-### secrets.lua, not to be added to git
-
-~~~{.lua}
-config('pass_salt',      '<any random string>') --for encrypting passwords in the database
-config('session_secret', '<any random string>') --for encrypting cookies
-config('db_pass',        nil)                   --the mysql password
-~~~
-
-### home.html.lua, the homepage action (which also responds to '/')
-
-~~~{.lua}
-local title = 'Home - My Website'
-local content = [[
-	... the page's html content ...
-]]
-
-run('main_template.lua', env{title = title, content = content})
-~~~
-
-### main_template.lua, the main template
-
-~~~{.lua}
-local t = {
-	lang = lang(),       --taken from `?lang=` or default
-	title = title,       --taken from env() call above
-	content = content,   --taken from env() call above
-}
-
-local template = [[
-<!DOCTYPE html>
-<html lang={{lang}}>
-<head>
-	<meta charset="UTF-8">
-	<meta name="viewport" content="width=device-width, initial-scale=1.0">
-	<title>{{title}}</title>
-	<link rel="stylesheet" type="text/css" href="/all.css">
-	<script src="/all.js"></script>
-</head>
-<body>
-	<div id=content_section>
-		{{{content}}}
-	</div>
-</body>
-</html>
-]]
-
-out(render_string(template, t))
-~~~
-
-### all.css.cat, concatenating all css files and serving them as one
-
-~~~
-font-awesome.css    --if using font awesome
-jquery.toasty.css   --if using toasty
-reset.css           --standard css reset
-main.css            --your own css
-~~~
-
-### all.js.cat, concatenating all js files and serving them as one
-
-~~~
-jquery.js           --if using webb.js
-jquery.history.js   --if using client-side URL routing
-jquery.toasty.js    --if using toasty notifications
-jquery.easing.js    --if using easing transitions
-jquery.validate.js  --if using client-side validation
-jquery.unslider.js  --if using unslider
-webb.js             --if using any client-side features
-analytics.js        --if using analytics
-facebook.js         --if using facebook authentication
-google.js           --if using g+ authentication
-account.js          --if using the standard account widget TODO
-resetpass.js        --if using the sandard reset password widget TODO
-config.js           --automatically generated
-main.js             --your own app code
-~~~
-
-### main.js, the client-side app code (if any)
-
-~~~{.js}
-analytics_init()    --if using analytics: ping analytics with a page view
-login()             --if using sessions and user accounts: get a session going
-url_changed()       --if using client-side actions: execute the current action
-~~~
+	config('facebook_app_id',  '<fb app id>')         --fb app id for fb authentication
+	config('google_client_id', '<google client id>')  --google client id for g+ authentication
+	config('analytics_ua',     '<analytics UA code>') --google analytics UA code for analytics
 
 
+secrets.lua, not to be added to git
+
+	config('pass_salt',      '<any random string>') --for encrypting passwords in the database
+	config('session_secret', '<any random string>') --for encrypting cookies
+	config('db_pass',        nil)                   --the mysql password
+
+
+home.html.lua, the homepage action (which also responds to '/')
+
+	local title = 'Home - My Website'
+	local content = [[
+		... the page's html content ...
+	]]
+
+	run('main_template.lua', env{title = title, content = content})
+
+
+main_template.lua, the main template
+
+	local t = {
+		lang = lang(),       --taken from `?lang=` or default
+		title = title,       --taken from env() call above
+		content = content,   --taken from env() call above
+	}
+
+	local template = [[
+	<!DOCTYPE html>
+	<html lang={{lang}}>
+	<head>
+		<meta charset="UTF-8">
+		<meta name="viewport" content="width=device-width, initial-scale=1.0">
+		<title>{{title}}</title>
+		<link rel="stylesheet" type="text/css" href="/all.css">
+		<script src="/all.js"></script>
+	</head>
+	<body>
+		<div id=content_section>
+			{{{content}}}
+		</div>
+	</body>
+	</html>
+	]]
+
+	out(render_string(template, t))
+
+
+all.css.cat, concatenating all css files and serving them as one
+
+	font-awesome.css    --if using font awesome
+	jquery.toasty.css   --if using toasty
+	reset.css           --standard css reset
+	main.css            --your own css
+
+
+all.js.cat, concatenating all js files and serving them as one
+
+	jquery.js           --if using webb.js
+	jquery.history.js   --if using client-side URL routing
+	jquery.toasty.js    --if using toasty notifications
+	jquery.easing.js    --if using easing transitions
+	jquery.validate.js  --if using client-side validation
+	jquery.unslider.js  --if using unslider
+	webb.js             --if using any client-side features
+	analytics.js        --if using analytics
+	facebook.js         --if using facebook authentication
+	google.js           --if using g+ authentication
+	account.js          --if using the standard account widget TODO
+	resetpass.js        --if using the sandard reset password widget TODO
+	config.js           --auto-generated with some values from config.lua
+	main.js             --your own app code
+
+
+main.js, the client-side app code (if any)
+
+
+	analytics_init()    --if using analytics: ping analytics with a page view
+	login()             --if using sessions and user accounts: get a session going
+	url_changed()       --if using client-side actions: execute the current action
+
+
+
+Server-side API
 ------------------------------------------------------------------------------
 
-## Server-side API
-
-### TODO
+TODO
 
 	* markdown preprocessor
 	* cascaded actions: html.m.lua, html.m.lp, etc.
 
-### Requires
+Requires
 
 	glue cjson lfs hige lp socket
 
-### Exports
+Exports
 
 	glue
 
-### CONFIG
+CONFIG
 
-    config(name[, default_val]) -> val        get/set config value
-    S(name[, default_val])                    get/set internationalized string
+	config(name[, default_val]) -> val        get/set config value
+	S(name[, default_val])                    get/set internationalized string
 
-### ENVIRONMENT
+ENVIRONMENT
 
-    once(f[, clear_cache[, k]])               memoize function for current request
-    env([t]) -> t                             per-request shared environment
+	once(f[, clear_cache[, k]])               memoize function for current request
+	env([t]) -> t                             per-request shared environment
 
-### REQUEST
+REQUEST
 
-    headers() -> t                            get all headers
-    headers(name) -> s                        get a specific header
-    method() -> s                             get the http method
-    method(which) -> t|f                      check the http method
-    post() -> t | nil                         get all POST args
-    post(name) -> s | nil                     get a POST arg
-    args() -> t                               return path elements and query args
-    args(n) -> s | nil                        return the n'th path element
-    args(name) -> s | nil                     return query arg
-    absurl([path]) -> s                       get the absolute url for a path
-    domain() -> s                             get website domain
-    email(user) -> s                          get email address of user
-    client_ip() -> s                          get client's ip address
-    lang() -> s                               get args'lang' or config'lang'
+	headers() -> t                            get all headers
+	headers(name) -> s                        get a specific header
+	method() -> s                             get the http method
+	method(which) -> t|f                      check the http method
+	post() -> t | nil                         get all POST args
+	post(name) -> s | nil                     get a POST arg
+	args() -> t                               return path elements and query args
+	args(n) -> s | nil                        return the n'th path element
+	args(name) -> s | nil                     return query arg
+	absurl([path]) -> s                       get the absolute url for a path
+	domain() -> s                             get website domain
+	email(user) -> s                          get email address of user
+	client_ip() -> s                          get client's ip address
+	lang() -> s                               get args'lang' or config'lang'
 
-### ARG PARSING
+ARG PARSING
 
-    uint_arg(s) -> n | nil                    validate unsigned integer arg
-    str_arg(s) -> s | nil                     validate/trim non-empty string arg
-    enum_arg(s, values...) -> s | nil         validate enum arg
-    list_arg(s[, arg_f]) -> t                 validate comma-separated list arg
-    id_arg(s) -> n                            decode n-s and return n
-    id_arg(n, s) -> s                         encode n and s as n-s
+	uint_arg(s) -> n | nil                    validate unsigned integer arg
+	str_arg(s) -> s | nil                     validate/trim non-empty string arg
+	enum_arg(s, values...) -> s | nil         validate enum arg
+	list_arg(s[, arg_f]) -> t                 validate comma-separated list arg
+	id_arg(s) -> n                            decode n-s and return n
+	id_arg(n, s) -> s                         encode n and s as n-s
 
-### RESPONSE
+RESPONSE
 
-    check(ret[, err]) -> ret                  exit with "404 file not found"
-    allow(ret[, err]) -> ret                  exit with "403 forbidden"
-    check_etag(etag)                          exit with "304 not modified"
+	check(ret[, err]) -> ret                  exit with "404 file not found"
+	allow(ret[, err]) -> ret                  exit with "403 forbidden"
+	check_etag(etag)                          exit with "304 not modified"
 
-### OUTPUT
+OUTPUT
 
-    out(s)                                    output a string
-    push_out([f])                             push output function or buffer
-    pop_out() -> s                            pop output function and flush it
-    record(f) -> s                            run f and collect out() calls
-    print(...)                                like Lua's print but uses out()
-    redirect(...)                             ngx.redirect
-    html(s) -> s                              escape html
+	out(s)                                    output a string
+	push_out([f])                             push output function or buffer
+	pop_out() -> s                            pop output function and flush it
+	record(f) -> s                            run f and collect out() calls
+	print(...)                                like Lua's print but uses out()
+	redirect(...)                             ngx.redirect
+	html(s) -> s                              escape html
 
-### JSON
+JSON
 
-    json(s) -> t                              decode json
-    json(t) -> s                              encode json
+	json(s) -> t                              decode json
+	json(t) -> s                              encode json
 
-### FILESYSTEM
+FILESYSTEM
 
-    basepath(file) -> path                    get filesystem path (unchecked)
-    filepath(file) -> path                    get filesystem path if file exists
-    readfile(file) -> s                       get file contents
+	basepath(file) -> path                    get filesystem path (unchecked)
+	filepath(file) -> path                    get filesystem path if file exists
+	readfile(file) -> s                       get file contents
 
-### MUSTACHE TEMPLATES
+MUSTACHE TEMPLATES
 
-    render_string(s[, env]) -> s              render a mustache template
-    render(file[, env]) -> s                  render a mustache template
+	render_string(s[, env]) -> s              render a mustache template
+	render(file[, env]) -> s                  render a mustache template
 
-### LUAPAGES TEMPLATES
+LUAPAGES TEMPLATES
 
-    include_string(s, [env], [name], ...)     run LuaPages script
-    include(file, [env], ...)                 run LuaPages script
+	include_string(s, [env], [name], ...)     run LuaPages script
+	include(file, [env], ...)                 run LuaPages script
 
-### LUA SCRIPTS
+LUA SCRIPTS
 
-    run_string(s, [env], args...) -> ret      run Lua script
-    run(file, [env], args...) -> ret          run Lua script
+	run_string(s, [env], args...) -> ret      run Lua script
+	run(file, [env], args...) -> ret          run Lua script
 
-### HTML FILTERS
+HTML FILTERS
 
-    filter_lang(s) -> s                       filter <t> tags and :lang attrs
-    filter_comments(s) -> s                   filter <!-- --> comments
+	filter_lang(s) -> s                       filter <t> tags and :lang attrs
+	filter_comments(s) -> s                   filter <!-- --> comments
 
-### CATLISTS
+CATLISTS
 
-    catlist(file)                             render a .cat file
+	catlist(file)                             render a .cat file
 
-### ACTIONS
+ACTIONS
 
-    action(name, args...) -> t|f              execute action (false if not found)
+	action(name, args...) -> t|f              execute action (false if not found)
 
-### QUERY
+QUERY
 
-    quote(s) -> s                             quote sql string
-    print_queries([t|f]) -> t|f               control printing of queries
-    query(s, args...) -> res                  query and return result table
-    query1(s, args...) -> t                   query and return first row
-    iquery(s, args...) -> id                  query and return insert id
-    changed(res) -> t|f                       check if any rows were updated
-    atomic(func)                              execute func in transaction
-    groupby(res, col) -> t                    group rows by a column
-
-
-### QUERY/DDL
-
-    qsubst(typedef)                           create a substitution definition
-    qmacro.<name> = f(args...)                create a macro definition
-
-    nodrop([t|f]) -> t|f                      control effect
-    dropfk(name)                              drop foreign key
-    droptable(name)                           drop table
-    fk(tbl, col, ...)                         create a foreign key
-
-### MAIL
-
-    sendmail(from, rcpt, subj, msg, html)     send mail via smtp to local server
-
-### SESSIONS
-
-    session_uid() -> uid
-    authenticate(auth) -> uid
-    set_pass(pass)                            set password for current user
-    send_auth_token(email)
-
-    login([auth][, switch_user]) -> uid       login
-    uid() -> uid                              get current user id
-    uid(field) -> v                           get current user id
-    logout() -> uid                           logout, and get an anonymous uid
-    admin() -> t|f
-    editmode() -> t|f
-
-    touch_usr()                               update user's atime
+	quote(s) -> s                             quote sql string
+	print_queries([t|f]) -> t|f               control printing of queries
+	query(s, args...) -> res                  query and return result table
+	query1(s, args...) -> t                   query and return first row
+	iquery(s, args...) -> id                  query and return insert id
+	changed(res) -> t|f                       check if any rows were updated
+	atomic(func)                              execute func in transaction
+	groupby(res, col) -> t                    group rows by a column
 
 
+QUERY/DDL
+
+	qsubst(typedef)                           create a substitution definition
+	qmacro.<name> = f(args...)                create a macro definition
+
+	nodrop([t|f]) -> t|f                      control effect
+	dropfk(name)                              drop foreign key
+	droptable(name)                           drop table
+	fk(tbl, col, ...)                         create a foreign key
+
+MAIL
+
+	sendmail(from, rcpt, subj, msg, html)     send mail via smtp to local server
+
+SESSIONS
+
+	session_uid() -> uid
+	authenticate(auth) -> uid
+	set_pass(pass)                            set password for current user
+	send_auth_token(email)
+
+	login([auth][, switch_user]) -> uid       login
+	uid() -> uid                              get current user id
+	uid(field) -> v                           get current user id
+	logout() -> uid                           logout, and get an anonymous uid
+	admin() -> t|f
+	editmode() -> t|f
+
+	touch_usr()                               update user's atime
+
+
+
+Client-side API
 ------------------------------------------------------------------------------
 
-## Client-side API
+GLUE
 
-### GLUE
+	memoize(f) -> f                           memoize function
+	chain(funcs...) -> f(args...)             chain functions
+	merge(dst)                                $.extend() without overriding
 
-    memoize(f) -> f                           memoize function
-    chain(funcs...) -> f(args...)             chain functions
-    merge(dst)                                $.extend() without overriding
+CONFIG
 
-### CONFIG
+	S(name, val)                              for internationalized strings
+	C(name, val)                              for global config options
 
-    S(name, val)                              for internationalized strings
-    C(name, val)                              for global config options
+	lang()                                    current language from ?lang= or default
 
-    lang()                                    current language from ?lang= or default
+STRING FORMATTING
 
-### STRING FORMATTING
+	s.format(args...) -> s                    '{0} ... {1}' formatting
+	s.trim() -> s                             trim string spaces
 
-    s.format(args...) -> s                    '{0} ... {1}' formatting
-    s.trim() -> s                             trim string spaces
+	firstname([fullname], [email]) ->s        get name from full name or email
 
-    firstname([fullname], [email]) ->s        get name from full name or email
+TIME FORMATTING
 
-### TIME FORMATTING
+	rel_time(s) -> s
+	timeago(timestamp) -> s
+	parse_date(s) -> d
+	format_time(d) -> s
+	is_today(d) -> t|f
+	shortdate(d, showtime) -> s
+	longdate(d, showtime) -> s
+	from_date(d) -> s
+	update_timeago()                          update all .timeago elements
 
-    rel_time(s) -> s
-    timeago(timestamp) -> s
-    parse_date(s) -> d
-    format_time(d) -> s
-    is_today(d) -> t|f
-    shortdate(d, showtime) -> s
-    longdate(d, showtime) -> s
-    from_date(d) -> s
-    update_timeago()                          update all .timeago elements
+PUB/SUB
 
-### PUB/SUB
+	listen(topic, func)                       add an event listener
+	unlisten(topic)                           remove event listeners on a topic
+	unlisten_all()                            remove all listeners for .current_action
+	broadcast(topic, data)                    broadcast data to all listeners
 
-    listen(topic, func)                       add an event listener
-    unlisten(topic)                           remove event listeners on a topic
-    unlisten_all()                            remove all listeners for .current_action
-    broadcast(topic, data)                    broadcast data to all listeners
+KEYBOARD NAVIGATION
 
-### KEYBOARD NAVIGATION
+	bind_keydown(id, func)                    add a keydown handler
+	unbind_keydown_all()                      remove all keydown handlers
 
-    bind_keydown(id, func)                    add a keydown handler
-    unbind_keydown_all()                      remove all keydown handlers
+PERSISTENCE
 
-### PERSISTENCE
+	store(key, value)                         store a value in the local store
+	getback(key) -> value                     get back the stored value
 
-    store(key, value)                         store a value in the local store
-    getback(key) -> value                     get back the stored value
+AJAX REQUESTS
 
-### AJAX REQUESTS
+	ajax(url, opt) -> id                      start an ajax request
+	abort(id)                                 abort an ajax request
+	abort_all()                               abort all ajax requests
 
-    ajax(url, opt) -> id                      start an ajax request
-    abort(id)                                 abort an ajax request
-    abort_all()                               abort all ajax requests
+	get(url, success, error, opt) -> id       simple API for ajax GET requests
+	post(url, data, success, error, opt)->id  simple API for ajax POST requests
 
-    get(url, success, error, opt) -> id       simple API for ajax GET requests
-    post(url, data, success, error, opt)->id  simple API for ajax POST requests
+	load_content(dst, url, success, error, opt)    load content dynamically
 
-    load_content(dst, url, success, error, opt)    load content dynamically
+TEMPLATING
 
-### TEMPLATING
+	render(template_name, data, dst) -> s     render a template to an element
+	render_multi_column(template_name, items, col_count)  multi-column templates
+	select_map(a, selv)                       generate data to generate <select> elements
 
-    render(template_name, data, dst) -> s     render a template to an element
-    render_multi_column(template_name, items, col_count)  multi-column templates
-    select_map(a, selv)                       generate data to generate <select> elements
-
-### ADDRESS BAR, LINKS, SCROLLING
+ADDRESS BAR, LINKS, SCROLLING
 
 	hide_nav()
 	check(truth)
@@ -439,7 +438,7 @@ url_changed()       --if using client-side actions: execute the current action
 	setscroll()
 	scroll_top()
 
-### UI PATTERNS
+UI PATTERNS
 
 	follow_scroll(element_id, margin)
 
@@ -450,35 +449,36 @@ url_changed()       --if using client-side actions: execute the current action
 	.back-to-top
 
 
+Server-side API
 ------------------------------------------------------------------------------
 
-# Server-side API
+Config
 
-## Config
-
-### `config(name[, default_val]) -> val`
+	config(name[, default_val]) -> val
 
 Get/set config value.
 
-### `S(name[, default_val])`
+	S(name[, default_val])
 
 Get/set internationalized string.
 
-# Enviornment
 
-### `once(f[, clear_cache[, k]])`
+Enviornment
+
+	once(f[, clear_cache[, k]])
 
 Memoize 0-arg or 1-arg function for current request. If clear_cache is
 true, then clear the cache (either for the entire function or for arg `k`).
 
-### `env() -> t`
+	env() -> t
 
 Per-request shared environment. Scripts run with `render()`,
 `include()`, `run()` run in this environment by default.
 
-## Sessions
 
-### `login([auth][, switch_user]) -> uid | nil[, err]`
+Sessions
+
+	login([auth][, switch_user]) -> uid | nil[, err]
 
 Login using one of the supported authentication methods:
 
@@ -513,39 +513,41 @@ logged in before and it was a different user, the callback
 `switch_user(new_uid, old_uid)` is called. If that previous user was
 anonymous then that user is also deleted.
 
-### `uid() -> uid`
+	uid() -> uid
 
 Get the current user id. Same as calling `login()` without args but
 caches the uid so it can be called multiple times without actually
 performing the login.
 
-### `uid(field) -> v`
+	uid(field) -> v
 
 Get the value of a a specific field from the user info.
 
-### `uid'*' -> t`
+	uid'*' -> t
 
 Get full user info.
 
-### `logout() -> uid`
+	logout() -> uid
 
 Clears the session cookie and creates an anonymous user and returns it.
 
-### `admin() -> t|f`
+	admin() -> t|f
 
 Returns true if the user has the admin flag.
 
-### `editmode() -> t|f`
+	editmode() -> t|f
 
 Same as `admin()`. Override to add more logic to it.
 
-### `touch_usr()`
+	touch_usr()
 
 Update user's access time. Call it on every request as a way of tracking
 user activity, eg. for knowing when to send those annoying "forgot items
 in your cart" emails.
 
 
+
+Client-side API
 ------------------------------------------------------------------------------
 
-# Client-side API
+TODO
