@@ -34,7 +34,7 @@ Download and unpack the OpenResty 1.11.2.4 sources, then:
 ### Install a php-fpm pool for your website
 
 
-	./install-php-fpm-pool <website-name>
+	./install-php-fpm-pool
 
 
 ### Reset MySQL root password

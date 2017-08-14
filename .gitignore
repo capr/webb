@@ -1,5 +1,9 @@
 git-up.cmd
 *_temp
 logs/
-secrets.conf
 www/secrets.lua
+ngx
+mime.types
+fastcgi_params
+ngx-*
+nginx.*
