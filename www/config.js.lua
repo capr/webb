@@ -3,7 +3,7 @@ local function C(name)
 end
 
 C'lang'
-C'default_action'
+C'root_action'
 C'templates_action'
 C'facebook_app_id'
 C'analytics_ua'

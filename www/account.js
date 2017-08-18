@@ -2,6 +2,7 @@
 // session vocabulary --------------------------------------------------------
 
 function login(auth, success, error, opt, arg) {
+	auth = auth || {type: 'session'}
 	function logged_in(usr) {
 		broadcast('usr', usr)
 		if (success)
@@ -334,10 +335,3 @@ action.account = function() {
 	account_widget()
 }
 
-action.cont = function() {
-	exec('/account')
-}
-
-action.comanda = function() {
-	exec('/account')
-}

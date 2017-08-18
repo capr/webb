@@ -429,7 +429,7 @@ function touch_usr()
 	if not uid then return end
 	query([[
 		update usr set
-			atime = now(), mtime = mtime, codesent = 0
+			atime = now(), mtime = mtime
 		where uid = ?
 	]], uid)
 end

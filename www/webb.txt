@@ -50,6 +50,25 @@ Reset MySQL root password
 	FLUSH PRIVILEGES;
 
 
+Dependency versions
+
+	OpenResty         1.11.2.4
+	resty.mysql       0.13   (included; current is 0.20)
+	resty.random      ?      (included; current is 0.09 and not compatible)
+	resty.session     1.1    (included; current is 2.18)
+	resty.socket      ?      (included; current is 0.0.7)
+
+	jQuery            1.11.1 (included; current is 3.2.1)
+	jquery.validate   1.13.1 (included; current is 1.17.0)
+	jquery.history    ?      (included; current is 1.8b2)
+	jquery.easing     1.3    (included; current is 1.3)
+	mustache.js       0.8.2  (included; current is 2.3.0)
+
+	hige.lua
+	lp.lua            1.15   (included; current is ?)
+
+	MySQL             5.7.19
+	PHP               7.0.22 (only for adminer.php)
 
 HowTO
 ------------------------------------------------------------------------------
@@ -80,15 +99,12 @@ main.lua
 		-- get the split path: for path `/a/b` returns `{'a', 'b'}`
 		local path = args()
 
-		--action-based routing: looks for `a.html.lua`, `a.html.lp` and `a.html.cat`
-		if not action(unpack(path)) then
-			--if an action was not found and an image file was requested,
-			--redirect to `/0.png` with 302-moved-temporarily,
-			--in order to avoid the dreaded broken image icon.
-			check_img()
-		end
+		--action-based routing: looks for `a.html.lua`, `a.html.lp`,
+		--`a.html.cat`, `404.html.lua', `404.html.lp`, `404.html.cat`.
+		var found = action(unpack(path))
 
-		check(false) --exit with 404
+		--exit with 404 (and no output) if an action was not found
+		check(found)
 	end
 
 
@@ -96,13 +112,16 @@ config.lua
 
 Note: only need to add the lines for which the value is different than below.
 
-	config('lang',      'en')         --the default language
-	config('default_action', 'home')  --the action to run for the '/' path
+	config('lang', 'en')              --the default language
+	config('root_action', 'home')     --the action to run for the '/' path
+	config('404_html_action', '404.html') --the 404 html action
+	config('404_png_action',  '404.png')  --the 404 png action
+	config('404_jpeg_action', '404.jpg')  --the 404 jpeg action
 
-	config('db_host',   '127.0.0.1')  --the ip address of the local mysql server
-	config('db_port',   3306)         --the port of the local mysql server
-	config('db_name',   '<db name>')  --the mysql database name
-	config('db_user',   'root')       --the mysql user
+	config('db_host', '127.0.0.1')    --the ip address of the local mysql server
+	config('db_port', 3306)           --the port of the local mysql server
+	config('db_name', '<db name>')    --the mysql database name
+	config('db_user', 'root')         --the mysql user
 	config('db_conn_timeout', 3)      --connection timeout in seconds
 	config('db_query_timeout', 30)    --query timeout in seconds
 
@@ -250,21 +269,23 @@ ARG PARSING
 	id_arg(s) -> n                            decode n-s and return n
 	id_arg(n, s) -> s                         encode n and s as n-s
 
-RESPONSE
-
-	check(ret[, err]) -> ret                  exit with "404 file not found"
-	allow(ret[, err]) -> ret                  exit with "403 forbidden"
-	check_etag(etag)                          exit with "304 not modified"
-
 OUTPUT
 
 	out(s)                                    output a string
 	push_out([f])                             push output function or buffer
 	pop_out() -> s                            pop output function and flush it
 	record(f) -> s                            run f and collect out() calls
+	out_bufferin() -> t | f                   check if we're buffering output
+	setheader(name, val)                      set a header if not buffering
 	print(...)                                like Lua's print but uses out()
-	redirect(...)                             ngx.redirect
 	html(s) -> s                              escape html
+
+RESPONSE
+
+	redirect(url[, status])                   exit with "302 moved temporarily"
+	check(ret[, err]) -> ret                  exit with "404 file not found"
+	allow(ret[, err]) -> ret                  exit with "403 forbidden"
+	check_etag(s)                             exit with "304 not modified"
 
 JSON
 
@@ -301,7 +322,7 @@ HTML FILTERS
 
 CATLISTS
 
-	catlist(file)                             render a .cat file
+	catlist(file, args...)                    output a .cat file
 
 ACTIONS
 
@@ -353,12 +374,6 @@ SESSIONS
 
 Client-side API
 ------------------------------------------------------------------------------
-
-GLUE
-
-	memoize(f) -> f                           memoize function
-	chain(funcs...) -> f(args...)             chain functions
-	merge(dst)                                $.extend() without overriding
 
 CONFIG
 
@@ -429,7 +444,6 @@ ADDRESS BAR, LINKS, SCROLLING
 	set_state_top(top)
 	exec(url, params)
 	action = {} // {action: handler}
-	default_action = 'cat'
 	parse_url(url)
 	url_changed()
 	setlink(a, url, params, hook)
@@ -455,7 +469,7 @@ UI PATTERNS
 Server-side API
 ------------------------------------------------------------------------------
 
-Config
+CONFIG
 
 	config(name[, default_val]) -> val
 
@@ -466,7 +480,7 @@ Get/set config value.
 Get/set internationalized string.
 
 
-Environment
+ENVIRONMENT
 
 	once(f[, clear_cache[, k]])
 
@@ -479,7 +493,8 @@ Per-request shared environment. Scripts run with `render()`,
 `include()`, `run()` run in this environment by default. If the `t` argument
 is given, an inherited environment is created.
 
-Sessions
+
+SESSIONS
 
 	login([auth][, switch_user]) -> uid | nil[, err]
 

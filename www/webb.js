@@ -503,7 +503,7 @@ function parse_url(url) {
 	var args = url.split('/')
 	if (args[0]) return // not an action url
 	args.shift() // remove ""
-	var act = args[0] || config('default_action')
+	var act = args[0] || config('root_action')
 	args.shift() // remove the action
 	act = act.replace('-', '_') // make it easier to declare actions
 	var handler = action[act] // find a handler

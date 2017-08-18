@@ -207,43 +207,18 @@ function id_arg(id, s)
 	end
 end
 
---response API ---------------------------------------------------------------
-
-redirect = ngx.redirect
-
-function check(ret, err)
-	if ret then return ret end
-	ngx.status = 404
-	if err then ngx.print(err) end
-	ngx.exit(0)
-end
-
-function allow(ret, err)
-	if ret then return ret, err end
-	ngx.status = 403
-	if err then ngx.print(err) end
-	ngx.exit(0)
-end
-
-function check_etag(etag)
-	--compare etag with client's
-	local etag0 = headers'if_none_match'
-	if etag0 and etag0 == etag then
-		ngx.status = 304
-		ngx.exit(0)
-	end
-	--send etag to client as weak etag so that nginx gzip filter still apply
-	ngx.header.ETag = 'W/'..etag
-end
-
 --output API -----------------------------------------------------------------
+
+function out_buffering()
+	return ngx.ctx.outfunc ~= nil
+end
 
 local function default_outfunc(s)
 	ngx.print(s)
 end
 
-local function outbuf()
-	local t = {}
+local function outbuf(t)
+	t = t or {}
 	return function(s)
 		if s then
 			t[#t+1] = s
@@ -296,9 +271,15 @@ function html(str)
 	end)
 end
 
---print API ------------------------------------------------------------------
+function setheader(name, val)
+	if out_buffering() then
+		return
+	end
+	ngx.header[name] = val
+end
 
 function print(...)
+	local out = default_outfunc
 	ngx.header.content_type = 'text/plain'
 	local n = select('#', ...)
 	for i=1,n do
@@ -308,6 +289,58 @@ function print(...)
 		end
 	end
 	out'\n'
+end
+
+--response API ---------------------------------------------------------------
+
+local function http_error(code, msg)
+	local t = {http_code = code, message = msg}
+	function t:__tostring()
+		return tostring(code)..(msg and ' '..tostring(msg) or '')
+	end
+	setmetatable(t, t)
+	error(t, 2)
+end
+
+redirect = ngx.redirect
+
+function check(ret, err)
+	if ret then return ret end
+	http_error(404, err)
+end
+
+function allow(ret, err)
+	if ret then return ret, err end
+	http_error(403, err)
+end
+
+function push_out_etag()
+	if not headers'if_none_match' then return end
+	push_out()
+end
+
+function pop_out_etag()
+	local etag0 = headers'if_none_match'
+	if not etag0 then return end
+	local s = pop_out()
+	local etag = ngx.md5(s)
+	if etag0 == etag then
+		http_error(304)
+	end
+	out(s)
+end
+
+function check_etag(s)
+	if out_buffering() or not method'get' then
+		return
+	end
+	local etag0 = headers'if_none_match'
+	local etag = ngx.md5(s)
+	if etag0 == etag then
+		http_error(304)
+	end
+	--send etag to client as weak etag so that nginx gzip filter still apply
+	setheader('ETag', 'W/'..etag)
 end
 
 --json API -------------------------------------------------------------------
@@ -343,6 +376,9 @@ end
 function readfile(file)
 	return assert(glue.readfile(basepath(file)))
 end
+
+--TODO: outfile(file) which skips the accumulation/concat
+--so it can work with very large files
 
 --mustache templates ---------------------------------------------------------
 
@@ -441,8 +477,8 @@ function catlist(listfile, ...)
 	local sep = js and ';\n' or '\n'
 
 	--generate and check etag
-	local t = {}
-	local c = {}
+	local t = {} --etag seeds
+	local c = {} --output generators
 	for file in readfile(listfile):gmatch'([^%s]+)' do
 		local path = filepath(file)
 		if path then --plain file, get its mtime
@@ -459,8 +495,7 @@ function catlist(listfile, ...)
 			end
 		end
 	end
-	local etag = ngx.md5(table.concat(t, ' '))
-	check_etag(etag)
+	check_etag(table.concat(t, '\n'))
 
 	--output the content
 	for i,f in ipairs(c) do
@@ -470,6 +505,8 @@ function catlist(listfile, ...)
 end
 
 --action API -----------------------------------------------------------------
+
+--action files
 
 local action_handlers = {
 	cat = function(action, ...)
@@ -485,17 +522,27 @@ local action_handlers = {
 
 local actions_list = glue.keys(action_handlers, true)
 
+local function plain_file_action_handler(action)
+	out(readfile(action))
+end
+
 local actionfile = glue.memoize(function(action)
+	if filepath(action) then --action is a plain file
+		return plain_file_action_handler
+	end
 	local ret_file, ret_handler
 	for i,ext in ipairs(actions_list) do
 		local file = action..'.'..ext
 		if filepath(file) then
 			assert(not ret_file, 'multiple action files for action '..action)
-			ret_file, ret_handler = file, action_handlers[ext]
+			ret_file = file
+			ret_handler = action_handlers[ext]
 		end
 	end
-	return {ret_file, ret_handler}
+	return ret_handler
 end)
+
+--mime type inferrence
 
 local mime_types = {
 	html = 'text/html',
@@ -504,19 +551,26 @@ local mime_types = {
 	json = 'application/json',
 	js   = 'application/javascript',
 	jpg  = 'image/jpeg',
+	jpeg = 'image/jpeg',
 	png  = 'image/png',
 	ico  = 'image/ico',
 }
 
+--output filters
+
 local function html_filter(handler, action, ...)
 	local s = record(handler, action, ...)
-	out(filter_lang(filter_comments(s)))
+	local s = filter_lang(filter_comments(s))
+	check_etag(s)
+	out(s)
 end
 
 local function json_filter(handler, action, ...)
 	local t = handler(action, ...)
 	if type(t) == 'table' then
-		out(json(t))
+		local s = json(t)
+		check_etag(s)
+		out(s)
 	end
 end
 
@@ -525,44 +579,49 @@ local mime_type_filters = {
 	['application/json'] = json_filter,
 }
 
-config('default_action', 'home') --set it here so we can see it client-side
+local not_found_actions = {
+	['text/html']  = config('html_404_action', '404.html'),
+	['image/png']  = config('png_404_action',  '404.png'),
+	['image/jpeg'] = config('jpeg_404_action', '404.jpg'),
+}
 
-function action(action, ...)
+--logic
 
+config('root_action', 'home') --set it here so we can see it client-side
+
+local function run_action(actions, action, ...)
 	if action == '' then
-		action = config'default_action'
+		action = config'root_action'
 	end
-
-	--set mime type based on action's file extension (default is html).
-	local ext = action:match'%.([^%.]+)$'
-	if not ext then
+	local handler = actions[action] --look for a local action
+	local ext = action:match'%.([^%.]+)$' --get the action's file extension
+	if not ext then --add the default .html extension to the action
 		ext = 'html'
 		action = action .. '.' .. ext
 	end
-	local mime = assert(mime_types[ext])
-
-	local file, handler = unpack(actionfile(action))
-	if not file then return false end
-
-	ngx.header.content_type = mime
-
+	local mime = mime_types[ext]
+	handler = handler or actions[action] --look again after adding .html
+	handler = handler or actionfile(action) --look on the filesystem
+	if not handler then --look for a 404 handler
+		local nf_action = not_found_actions[mime]
+		if not nf_action or nf_action == action then
+			--the 404 action itself was not found
+			return false
+		end
+		return run_action(actions, nf_action, ...)
+	end
+	if mime then
+		setheader('content_type', mime)
+	end
 	local filter = mime_type_filters[mime]
 	if filter then
 		filter(handler, action, ...)
 	else
 		handler(action, ...)
 	end
-
 	return true
 end
 
---missing image fallback -----------------------------------------------------
-
-function check_img()
-	local path = ngx.var.uri
-	if path:find'%.jpg$' or path:find'%.png$' then
-		--redirect to empty image (default is 302-moved-temporarily)
-		redirect('/0.png')
-	end
-end
+action = {} --{action=handler}
+setmetatable(action, {__call = run_action})
 
