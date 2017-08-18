@@ -160,8 +160,12 @@ function client_ip()
 	return ngx.var.remote_addr
 end
 
-function lang()
-	return args'lang' or config('lang', 'en')
+function lang(s)
+	if s then
+		env()._lang = s
+	else
+		return env()._lang or args'lang' or config('lang', 'en')
+	end
 end
 
 --arg validation
@@ -508,6 +512,11 @@ end
 
 --action files
 
+local function action_file(action)
+	local ext = action:match'%.([^%.]+)$' --get the action's file extension
+	return ext and action or action .. '.html'
+end
+
 local action_handlers = {
 	cat = function(action, ...)
 		catlist(action..'.cat', ...)
@@ -593,15 +602,18 @@ local function run_action(actions, action, ...)
 	if action == '' then
 		action = config'root_action'
 	end
-	local handler = actions[action] --look for a local action
+	action = action:gsub('-', '_') --make actions easier to declare
 	local ext = action:match'%.([^%.]+)$' --get the action's file extension
+	local action_no_ext = action
 	if not ext then --add the default .html extension to the action
 		ext = 'html'
 		action = action .. '.' .. ext
 	end
 	local mime = mime_types[ext]
-	handler = handler or actions[action] --look again after adding .html
-	handler = handler or actionfile(action) --look on the filesystem
+	local handler =
+		actionfile(action) --look on the filesystem
+		or actions[action_no_ext] --look in the default action table
+		or actions[action] --look again with .html extension
 	if not handler then --look for a 404 handler
 		local nf_action = not_found_actions[mime]
 		if not nf_action or nf_action == action then
@@ -624,4 +636,50 @@ end
 
 action = {} --{action=handler}
 setmetatable(action, {__call = run_action})
+
+--action aliases
+
+local aliases = {}
+config('aliases', aliases) --because we pass them to the client
+
+function alias(alias_action, alias_lang, en_action)
+	action[alias_action] = function(_, ...)
+		lang(alias_lang)
+		return action(en_action, ...)
+	end
+	aliases[alias_action] = en_action
+end
+
+--built-in actions -----------------------------------------------------------
+
+action['404.html'] = function(action, ...)
+	check(false, 'File Not Found')
+end
+
+action['404.png'] = function(action, ...)
+	redirect'/1x1.png'
+end
+
+action['404.jpg'] = action['404.png']
+
+action['config.js'] = function(action, ...)
+	local function C(name)
+		out('config(\''..name..'\', '..cjson.encode(config(name))..')\n')
+	end
+
+	C'lang'
+	C'root_action'
+	C'templates_action'
+	C'aliases'
+
+	C'facebook_app_id'
+	C'analytics_ua'
+	C'google_client_id'
+
+end
+
+action['strings.js'] = function(_, ...)
+	if lang() == 'en' then return end
+	action('strings.'..lang()..'.js', ...)
+end
 

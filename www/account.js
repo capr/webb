@@ -1,8 +1,27 @@
+// documentation--------------------------------------------------------------
+/*
+	#account_section
+		#login_form
+			#email
+			#pass
+			#btn_facebook
+			#btn_google
+			#btn_no_account
+			#btn_login
+			#btn_create_account
+		#usr_form
+			#usr_email
+			#usr_name
+			#usr_phone
+			#relogin
+			#logout
+			#btn_save
+			#btn_cancel
+*/
 
 // session vocabulary --------------------------------------------------------
 
 function login(auth, success, error, opt, arg) {
-	auth = auth || {type: 'session'}
 	function logged_in(usr) {
 		broadcast('usr', usr)
 		if (success)

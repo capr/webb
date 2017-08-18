@@ -258,7 +258,7 @@ REQUEST
 	domain() -> s                             get website domain
 	email(user) -> s                          get email address of user
 	client_ip() -> s                          get client's ip address
-	lang() -> s                               get args'lang' or config'lang'
+	lang([s]) -> s                            get/set current language
 
 ARG PARSING
 
@@ -327,6 +327,7 @@ CATLISTS
 ACTIONS
 
 	action(name, args...) -> t|f              execute action (false if not found)
+	alias(action, lang, action_en)            set an action alias for a language
 
 QUERY
 

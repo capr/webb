@@ -506,6 +506,7 @@ function parse_url(url) {
 	var act = args[0] || config('root_action')
 	args.shift() // remove the action
 	act = act.replace('-', '_') // make it easier to declare actions
+	act = config('aliases')[act] || act // find the real action if it's an alias
 	var handler = action[act] // find a handler
 	if (!handler) {
 		// no handler, find a static template
@@ -534,7 +535,8 @@ function url_changed() {
 	unbind_keydown_all()
 	analytics_pageview() // note: title is not available at this time
 	var t = parse_url(location.pathname)
-	t.handler.apply(null, t.args)
+	if (t.handler)
+		t.handler.apply(null, t.args)
 }
 
 function setlink(a, url, params, hook) {
