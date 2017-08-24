@@ -1,3 +1,6 @@
+--Webb Framework | cookie/db-based session module
+--Written by Cosmin Apreutesei. Public Domain.
+
 local random_string = require'resty_random'
 local resty_session = require'resty_session'
 

@@ -1,4 +1,4 @@
---Webb Framework
+--Webb Framework | main module
 --Written by Cosmin Apreutesei. Public Domain.
 
 glue = require'glue'
@@ -250,8 +250,8 @@ function pop_out()
 end
 
 function out(s)
-	local outfunc = ngx.ctx.outfunc or default_outfunc
 	if s == nil then return end
+	local outfunc = ngx.ctx.outfunc or default_outfunc
 	outfunc(tostring(s))
 end
 
@@ -264,7 +264,7 @@ function record(out_content, ...)
 end
 
 function html(str)
-	if not str then return '' end
+	if str == nil then return '' end
 	return tostring(str):gsub('[&"<>\\]', function(c)
 		if c == '&' then return '&amp;'
 		elseif c == '"' then return '\"'
@@ -274,6 +274,88 @@ function html(str)
 		else return c end
 	end)
 end
+
+local function url_path(path)
+	if type(path) == 'table' then --encode
+		local t = {}
+		for i,s in ipairs(path) do
+			t[i] = ngx.escape_uri(s)
+		end
+		return #t > 0 and table.concat(t, '/') or nil
+	else --decode
+		local t = {}
+		for s in glue.gsplit(path, '/', 1, true) do
+			t[#t+1] = ngx.unescape_uri(s)
+		end
+		return t
+	end
+end
+
+local function url_params(params)
+	if type(params) == 'table' then --encode
+		return ngx.encode_args(params)
+	else --decode
+		return ngx.decode_args(params)
+	end
+end
+
+--use cases:
+--  decode url: url('a/b?a&b=1') -> {'a', 'b', a=true, b='1'}
+--  encode url: url{'a', 'b', a=true, b='1'} -> 'a/b?a&b=1'
+--  update url: url('a/b?a&b=1', {'c', b=2}) -> 'c/b?a&b=2'
+--  decode params only: url(nil, 'a&b=1') -> {a=true, b=1}
+--  encode params only: url(nil, {a=true, b=1}) -> 'a&b=1'
+function url(path, params)
+	if type(path) == 'string' then --decode or update url
+		local t
+		local i = path:find('?', 1, true)
+		if i then
+			t = url_path(path:sub(1, i-1))
+			glue.update(t, url_params(path:sub(i + 1)))
+		else
+			t = url_path(path)
+		end
+		if params then --update url
+			glue.update(t, params) --also updates any path elements
+			return url(t) --re-encode url
+		else --decode url
+			return t
+		end
+	elseif path then --encode url
+		local s1 = url_path(path)
+		--strip away the array part so that ngx.encode_args() doesn't complain
+		local t = {}
+		for k,v in pairs(path) do
+			if type(k) ~= 'number' then
+				t[k] = v
+			end
+		end
+		local s2 = next(t) ~= nil and url_params(t) or nil
+		return (s1 or '') .. (s1 and s2 and '?' or '') .. (s2 or '')
+	else --encode or decode params only
+		return url_params(params)
+	end
+end
+
+--[[
+ngx.say(require'pp'.format(url('a/b?a&b=1')))
+ngx.say(url{'a', 'b', a=true, b=1})
+ngx.say()
+ngx.say(require'pp'.format(url('?a&b=1')))
+ngx.say(url{'', a=true, b=1})
+ngx.say()
+ngx.say(require'pp'.format(url('a/b?')))
+ngx.say(url{'a', 'b', ['']=true})
+ngx.say()
+ngx.say(require'pp'.format(url('a/b')))
+ngx.say(url{'a', 'b'})
+ngx.say()
+ngx.say(url('a/b?a&b=1', {'c', b=2}))
+ngx.say()
+ngx.say(require'pp'.format(url(nil, 'a&b=1')))
+ngx.say(url(nil, {a=true, b=1}))
+ngx.say()
+]]
 
 function setheader(name, val)
 	if out_buffering() then
@@ -300,7 +382,7 @@ end
 local function http_error(code, msg)
 	local t = {http_code = code, message = msg}
 	function t:__tostring()
-		return tostring(code)..(msg and ' '..tostring(msg) or '')
+		return tostring(code)..(msg ~= nil and ' '..tostring(msg) or '')
 	end
 	setmetatable(t, t)
 	error(t, 2)
@@ -449,11 +531,11 @@ end
 
 --html filters ---------------------------------------------------------------
 
-function filter_lang(buf)
-	local lang0 = lang()
+function filter_lang(s, lang_)
+	local lang0 = lang_ or lang()
 
 	--replace <t class=lang>
-	buf = buf:gsub('<t class=([^>]+)>(.-)</t>', function(lang, html)
+	s = s:gsub('<t class=([^>]+)>(.-)</t>', function(lang, html)
 		assert(not html:find('<t class=', 1, true), html)
 		if lang ~= lang0 then return '' end
 		return html
@@ -464,18 +546,19 @@ function filter_lang(buf)
 		if lang ~= lang0 then return '' end
 		return attr .. val
 	end
-	buf = buf:gsub('(%s[%w_%:%-]+)%:(%a?%a?)(=%b"")', repl_attr)
-	buf = buf:gsub('(%s[%w_%:%-]+)%:(%a?%a?)(=[^%s>]*)', repl_attr)
+	s = s:gsub('(%s[%w_%:%-]+)%:(%a?%a?)(=%b"")', repl_attr)
+	s = s:gsub('(%s[%w_%:%-]+)%:(%a?%a?)(=[^%s>]*)', repl_attr)
 
-	return buf
+	return s
 end
 
-function filter_comments(buf)
-	return buf:gsub('<!%-%-.-%-%->', '')
+function filter_comments(s)
+	return (s:gsub('<!%-%-.-%-%->', ''))
 end
 
 --concatenated files preprocessor --------------------------------------------
 
+--NOTE: can also concatenate actions if the actions module is loaded.
 function catlist(listfile, ...)
 	local js = listfile:find'%.js%.cat$'
 	local sep = js and ';\n' or '\n'
@@ -489,7 +572,7 @@ function catlist(listfile, ...)
 			local mtime = lfs.attributes(path, 'modification')
 			table.insert(t, tostring(mtime))
 			table.insert(c, function() out(readfile(file)) end)
-		else --file not found, try an action
+		elseif action then --file not found, try an action
 			local s, found = record(action, file, ...)
 			if found then
 				table.insert(t, s)
@@ -497,6 +580,8 @@ function catlist(listfile, ...)
 			else
 				error('file not found '..file)
 			end
+		else
+			error('file not found '..file)
 		end
 	end
 	check_etag(table.concat(t, '\n'))
@@ -506,180 +591,5 @@ function catlist(listfile, ...)
 		f()
 		out(sep)
 	end
-end
-
---action API -----------------------------------------------------------------
-
---action files
-
-local function action_file(action)
-	local ext = action:match'%.([^%.]+)$' --get the action's file extension
-	return ext and action or action .. '.html'
-end
-
-local action_handlers = {
-	cat = function(action, ...)
-		catlist(action..'.cat', ...)
-	end,
-	lua = function(action, ...)
-		return run(action..'.lua', nil, ...)
-	end,
-	lp = function(action, ...)
-		include(action..'.lp')
-	end,
-}
-
-local actions_list = glue.keys(action_handlers, true)
-
-local function plain_file_action_handler(action)
-	out(readfile(action))
-end
-
-local actionfile = glue.memoize(function(action)
-	if filepath(action) then --action is a plain file
-		return plain_file_action_handler
-	end
-	local ret_file, ret_handler
-	for i,ext in ipairs(actions_list) do
-		local file = action..'.'..ext
-		if filepath(file) then
-			assert(not ret_file, 'multiple action files for action '..action)
-			ret_file = file
-			ret_handler = action_handlers[ext]
-		end
-	end
-	return ret_handler
-end)
-
---mime type inferrence
-
-local mime_types = {
-	html = 'text/html',
-	txt  = 'text/plain',
-	css  = 'text/css',
-	json = 'application/json',
-	js   = 'application/javascript',
-	jpg  = 'image/jpeg',
-	jpeg = 'image/jpeg',
-	png  = 'image/png',
-	ico  = 'image/ico',
-}
-
---output filters
-
-local function html_filter(handler, action, ...)
-	local s = record(handler, action, ...)
-	local s = filter_lang(filter_comments(s))
-	check_etag(s)
-	out(s)
-end
-
-local function json_filter(handler, action, ...)
-	local t = handler(action, ...)
-	if type(t) == 'table' then
-		local s = json(t)
-		check_etag(s)
-		out(s)
-	end
-end
-
-local mime_type_filters = {
-	['text/html']        = html_filter,
-	['application/json'] = json_filter,
-}
-
-local not_found_actions = {
-	['text/html']  = config('html_404_action', '404.html'),
-	['image/png']  = config('png_404_action',  '404.png'),
-	['image/jpeg'] = config('jpeg_404_action', '404.jpg'),
-}
-
---logic
-
-config('root_action', 'home') --set it here so we can see it client-side
-
-local function run_action(actions, action, ...)
-	if action == '' then
-		action = config'root_action'
-	end
-	action = action:gsub('-', '_') --make actions easier to declare
-	local ext = action:match'%.([^%.]+)$' --get the action's file extension
-	local action_no_ext = action
-	if not ext then --add the default .html extension to the action
-		ext = 'html'
-		action = action .. '.' .. ext
-	end
-	local mime = mime_types[ext]
-	local handler =
-		actionfile(action) --look on the filesystem
-		or actions[action_no_ext] --look in the default action table
-		or actions[action] --look again with .html extension
-	if not handler then --look for a 404 handler
-		local nf_action = not_found_actions[mime]
-		if not nf_action or nf_action == action then
-			--the 404 action itself was not found
-			return false
-		end
-		return run_action(actions, nf_action, ...)
-	end
-	if mime then
-		setheader('content_type', mime)
-	end
-	local filter = mime_type_filters[mime]
-	if filter then
-		filter(handler, action, ...)
-	else
-		handler(action, ...)
-	end
-	return true
-end
-
-action = {} --{action=handler}
-setmetatable(action, {__call = run_action})
-
---action aliases
-
-local aliases = {}
-config('aliases', aliases) --because we pass them to the client
-
-function alias(alias_action, alias_lang, en_action)
-	action[alias_action] = function(_, ...)
-		lang(alias_lang)
-		return action(en_action, ...)
-	end
-	aliases[alias_action] = en_action
-end
-
---built-in actions -----------------------------------------------------------
-
-action['404.html'] = function(action, ...)
-	check(false, 'File Not Found')
-end
-
-action['404.png'] = function(action, ...)
-	redirect'/1x1.png'
-end
-
-action['404.jpg'] = action['404.png']
-
-action['config.js'] = function(action, ...)
-	local function C(name)
-		out('config(\''..name..'\', '..cjson.encode(config(name))..')\n')
-	end
-
-	C'lang'
-	C'root_action'
-	C'templates_action'
-	C'aliases'
-
-	C'facebook_app_id'
-	C'analytics_ua'
-	C'google_client_id'
-
-end
-
-action['strings.js'] = function(_, ...)
-	if lang() == 'en' then return end
-	action('strings.'..lang()..'.js', ...)
 end
 

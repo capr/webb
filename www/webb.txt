@@ -254,7 +254,6 @@ REQUEST
 	args() -> t                               return path elements and query args
 	args(n) -> s | nil                        return the n'th path element
 	args(name) -> s | nil                     return query arg
-	absurl([path]) -> s                       get the absolute url for a path
 	domain() -> s                             get website domain
 	email(user) -> s                          get email address of user
 	client_ip() -> s                          get client's ip address
@@ -275,10 +274,12 @@ OUTPUT
 	push_out([f])                             push output function or buffer
 	pop_out() -> s                            pop output function and flush it
 	record(f) -> s                            run f and collect out() calls
-	out_bufferin() -> t | f                   check if we're buffering output
+	out_buffering() -> t | f                  check if we're buffering output
 	setheader(name, val)                      set a header if not buffering
 	print(...)                                like Lua's print but uses out()
 	html(s) -> s                              escape html
+	url([path], [params]) -> t | s            encode/decode/update url
+	absurl([path]) -> s                       get the absolute url for a path
 
 RESPONSE
 
@@ -319,6 +320,8 @@ HTML FILTERS
 
 	filter_lang(s) -> s                       filter <t> tags and :lang attrs
 	filter_comments(s) -> s                   filter <!-- --> comments
+	lang_url(t|s) -> s                        return a language-specific URL
+
 
 CATLISTS
 
@@ -327,7 +330,8 @@ CATLISTS
 ACTIONS
 
 	action(name, args...) -> t|f              execute action (false if not found)
-	alias(action, lang, action_en)            set an action alias for a language
+	alias(lang, action, action_en)            set an action alias for a language
+	setlinks(s) -> s                          translate URLs in href attrs
 
 QUERY
 

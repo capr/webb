@@ -1,3 +1,6 @@
+--Webb Framework | mail sending module
+--Written by Cosmin Apreutesei. Public Domain.
+
 require'resty_socket'
 local smtp = require'socket.smtp'
 smtp.TIMEOUT = 6000

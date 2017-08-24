@@ -1,4 +1,6 @@
---database query function
+--Webb Framework | mysql query module
+--Written by Cosmin Apreutesei. Public Domain.
+
 local mysql = require'resty_mysql'
 
 --db connection --------------------------------------------------------------

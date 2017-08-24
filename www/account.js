@@ -71,7 +71,6 @@ function account_widget(acc) {
 
 	acc = $.extend({
 		section: '#account_section',
-		allow_anonymous: false,
 	}, acc)
 
 	var want_anonymous = false
@@ -147,9 +146,6 @@ function account_widget(acc) {
 			want_anonymous = true
 			login({type: 'anonymous'})
 		})
-
-		if (!acc.allow_anonymous)
-			$('#btn_no_account').hide()
 
 		$('#email').keypress(function(e) {
 			if(e.keyCode == 13)
@@ -228,7 +224,6 @@ function account_widget(acc) {
 	function create_user_section(usr) {
 
 		usr.firstname = firstname(usr.name, usr.email)
-		usr.show_operations = !acc.allow_anonymous
 		render('account_info', usr, acc.section)
 
 		$('#relogin').click(function() {

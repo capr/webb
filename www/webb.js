@@ -320,7 +320,7 @@ function post(url, data, success, error, opt) {
 		}, opt))
 }
 
-// ajax request with ui feedback for slow loading and failure.
+// ajax request with UI feedback for slow loading and failure.
 // automatically aborts on load_content() and render() calls over the same dst.
 function load_content(dst, url, success, error, opt) {
 
@@ -379,21 +379,13 @@ function load_main(url, success, error, opt) {
 
 // templating ----------------------------------------------------------------
 
-var templates_loaded = false
-
 function load_templates(success) {
-	if (templates_loaded == lang()) {
+	var templates_html = config('templates_action')
+	get(lang_url('/'+templates_html), function(s) {
+		$('#templates').html(s)
 		if (success)
 			success()
-	} else {
-		var templates_html = config('templates_action', 'templates.html')
-		get(full_url('/'+templates_html), function(s) {
-			$('#templates').html(s)
-			templates_loaded = lang()
-			if (success)
-				success()
-		})
-	}
+	})
 }
 
 function template_object(name) {
@@ -404,7 +396,7 @@ function load_partial_(name) {
 	return template_object(name).html()
 }
 
-function render_(template_name, data, dst) {
+function render(template_name, data, dst) {
 	var t = template_object(template_name).html()
 	var s = Mustache.render(t, data || {}, load_partial_)
 	if (dst) {
@@ -415,12 +407,6 @@ function render_(template_name, data, dst) {
 		setlinks(dst)
 	} else
 		return s
-}
-
-function render(template_name, data, dst) {
-	load_templates(function() {
-		render_(template_name, data, dst)
-	})
 }
 
 function render_multi_column(template_name, items, col_count) {
@@ -448,6 +434,178 @@ function select_map(a, selv) {
 	return t
 }
 
+// url encoding & decoding ---------------------------------------------------
+
+// 1. decode: url('a/b?k=v') -> {path: ['a','b'], params: {k:'v'}}
+// 2. encode: url(['a','b'], {k:'v'}) -> 'a/b?k=v'
+// 3. update: url('a/b', {k:'v'}) -> 'a/b?k=v'
+// 4. update: url('a/b?k=v', ['c'], {k:'x'}) -> 'c/b?k=x'
+function url(path, params, update) {
+	if (typeof path == 'string') { // decode or update
+		if (params !== undefined || update !== undefined) { // update
+			if (typeof params == 'object') { // update params only
+				update = params
+				params = undefined
+			}
+			var t = url(path) // decode
+			if (params) // update path
+				for (var i = 0; i < params.length; i++)
+					t.path[i] = params[i]
+			if (update) // update params
+				for (k in update)
+					t.params[k] = update[k]
+			return url(t.path, t.params) // encode back
+		} else { // decode
+			var i = path.indexOf('?')
+			var params
+			if (i > -1) {
+				params = path.substring(i + 1)
+				path = path.substring(0, i)
+			}
+			var a = path.split('/')
+			for (var i = 0; i < a.length; i++)
+				a[i] = decodeURIComponent(a[i])
+			var t = {}
+			if (params !== undefined) {
+				params = params.split('&')
+				for (var i = 0; i < params.length; i++) {
+					var kv = params[i].split('=')
+					var k = decodeURIComponent(kv[0])
+					var v = kv.length == 1 ? true : decodeURIComponent(kv[1])
+					if (t[k] !== undefined) {
+						if (typeof t[k] != 'array')
+							t[k] = [t[k]]
+						t[k].push(v)
+					} else {
+						t[k] = v
+					}
+				}
+			}
+			return {path: a, params: t}
+		}
+	} else { // encode
+		if (typeof path == 'object') {
+			params = path.params
+			path = path.path
+		}
+		var a = []
+		for (var i = 0; i < path.length; i++)
+			a[i] = encodeURIComponent(path[i])
+		var path = a.join('/')
+		var a = []
+		var keys = Object.keys(params).sort()
+		for (var i = 0; i < keys.length; i++) {
+			var pk = keys[i]
+			var k = encodeURIComponent(pk)
+			var v = params[pk]
+			if (typeof v == 'array') {
+				for (var j = 0; j < v.length; j++) {
+					var z = v[j]
+					var kv = k + (z !== true ? '=' + encodeURIComponent(z) : '')
+					a.push(kv)
+				}
+			} else {
+				var kv = k + (v !== true ? '=' + encodeURIComponent(v) : '')
+				a.push(kv)
+			}
+		}
+		var params = a.join('&')
+		return path + (params ? '?' + params : '')
+	}
+}
+
+/*
+//decode
+console.log(url('a/b?a&b=1'))
+console.log(url('a/b?'))
+console.log(url('a/b'))
+console.log(url('?a&b=1&b=2'))
+console.log(url('/'))
+console.log(url(''))
+//encode
+// TODO
+console.log(url(['a', 'b'], {a: true, b: 1}))
+//update
+// TODO
+*/
+
+// actions -------------------------------------------------------------------
+
+function decode_url(path, params) {
+	if (typeof path == 'string') {
+		var t = url(path)
+		if (params)
+			for (k in params)
+				t.params[k] = params[k]
+		return t
+	} else {
+		return {path: path, params: params || {}}
+	}
+}
+
+// extract the action from a decoded url
+function url_action(t) {
+	if (t.path[0] == '' && t.path.length >= 2)
+		return t.path[1]
+}
+
+// given an url (in encoded or decoded form), if it's an action url,
+// replace its action name with a language-specific alias for a given
+// (or current) language if any, or add ?lang= if the given language
+// is not the default language.
+function lang_url(path, params, target_lang) {
+	var t = decode_url(path, params)
+	var default_lang = config('lang')
+	var target_lang = target_lang || t.lang || lang()
+	var action = url_action(t)
+	if (action === undefined)
+		return url(t)
+	var is_root = t[1] == ''
+	if (is_root)
+		action = config('root_action')
+	var at = config('aliases').to_lang[action]
+	var lang_action = at && at[target_lang]
+	if (lang_action) {
+		if (! (is_root && target_lang == default_lang))
+			t[1] = lang_action
+	} else if (target_lang != default_lang) {
+		t.params.lang = target_lang
+	}
+	return url(t)
+}
+
+var action = {} // {action: handler}
+
+// given a path (in encoded or decoded form), find the action it points to
+// and return its handler.
+function find_action(path) {
+	var t = url(path)
+	var act = url_action(t)
+	if (act === undefined)
+		return
+	if (act == '')
+		act = config('root_action')
+	else // an alias or the act name directly
+		act = config('aliases').to_en[act] || act
+	act = act.replace('-', '_') // make it easier to declare actions
+	var handler = action[act] // find a handler
+	if (!handler) {
+		// no handler, find a static template
+		if (template_object(act).length) {
+			handler = function() {
+				hide_nav()
+				render(act, null, '#main')
+			}
+		}
+	}
+	var args = t.path
+	args.shift(0) // remove /
+	args.shift(0) // remove act
+	return handler && function() {
+		handler.apply(null, args)
+	}
+}
+
 // address bar, links and scrolling ------------------------------------------
 
 function hide_nav() {
@@ -470,18 +628,7 @@ $(function() {
 	History.Adapter.bind(window, 'statechange', url_changed)
 })
 
-function full_url(path, params) {
-	// encode params and add lang param to url if needed.
-	var lang_ = lang()
-	var explicit_lang = lang_ != config('lang')
-	var url = path
-	if (params || explicit_lang) {
-		if (explicit_lang)
-			params = $.extend({}, params, {lang: lang_})
-		url = url + '?' + $.param(params)
-	}
-	return url
-}
+var g_ignore_url_changed
 
 function set_state_top(top) {
 	var state = History.getState()
@@ -490,63 +637,34 @@ function set_state_top(top) {
 	g_ignore_url_changed = false
 }
 
-function exec(url, params) {
+function exec(path, params) {
 	// store current scroll top in current state first
 	set_state_top($(window).scrollTop())
 	// push new state without data
-	History.pushState(null, null, full_url(url, params))
+	History.pushState(null, null, lang_url(path, params))
 }
-
-var action = {} // {action: handler}
-
-function parse_url(url) {
-	var args = url.split('/')
-	if (args[0]) return // not an action url
-	args.shift() // remove ""
-	var act = args[0] || config('root_action')
-	args.shift() // remove the action
-	act = act.replace('-', '_') // make it easier to declare actions
-	act = config('aliases')[act] || act // find the real action if it's an alias
-	var handler = action[act] // find a handler
-	if (!handler) {
-		// no handler, find a static template
-		if (template_object(act).length) {
-			handler = function() {
-				hide_nav()
-				render(act, null, '#main')
-			}
-		}
-	} else {
-		for (var i = 0; i < args.length; i++)
-			args[i] = decodeURIComponent(args[i])
-	}
-	return {
-		action: act,
-		handler: handler,
-		args: args,
-	}
-}
-
-var g_ignore_url_changed
 
 function url_changed() {
 	if (g_ignore_url_changed) return
 	unlisten_all()
 	unbind_keydown_all()
 	analytics_pageview() // note: title is not available at this time
-	var t = parse_url(location.pathname)
-	if (t.handler)
-		t.handler.apply(null, t.args)
+	var handler = find_action(location.pathname)
+	if (handler)
+		handler()
 }
 
-function setlink(a, url, params, hook) {
-	$(a).attr('href', full_url(url, params))
+function setlink(a, path, params, hook) {
+	$(a).attr('href', lang_url(path, params))
 		.click(function(event) {
+			var handler = find_action(path)
+			if (! (handler || hook)) return
 			// shit/ctrl+click passes through to open in new window or tab
 			if (event.shiftKey || event.ctrlKey) return
 			event.preventDefault()
 			if (hook) hook()
-			exec(url, params)
+			if (handler)
+				exec(path, params)
 		})
 }
 
@@ -556,8 +674,6 @@ function setlinks(dst) {
 		var a = $(this)
 		if (a.attr('target')) return
 		var url = a.attr('href')
-		var t = parse_url(url)
-		if (!t || !t.handler) return
 		setlink(this, url)
 	})
 }
@@ -600,6 +716,14 @@ function setscroll() {
 function scroll_top() {
 	set_state_top(0)
 	$(window).scrollTop(0)
+}
+
+function init_actions() {
+	$(function() {
+		load_templates(function() {
+			url_changed()
+		})
+	})
 }
 
 // UI patterns ---------------------------------------------------------------
