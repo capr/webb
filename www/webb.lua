@@ -45,10 +45,11 @@ function once(f, clear_cache, ...)
 	if clear_cache then
 		local t = ngx.ctx[f]
 		if t then
-			if select(1, ...) == 0 then
+			if select('#', ...) == 0 then
 				t = {}
 				ngx.ctx[f] = t
 			else
+				local k = ...
 				t[enc(k)] = nil
 			end
 		end
@@ -59,10 +60,12 @@ function once(f, clear_cache, ...)
 				t = {}
 				ngx.ctx[f] = t
 			end
-			local v = dec(t[enc(k)])
+			local v = t[enc(k)]
 			if v == nil then
 				v = f(k)
 				t[enc(k)] = enc(v)
+			else
+				v = dec(v)
 			end
 			return v
 		end
@@ -143,17 +146,37 @@ function post(v)
 	end
 end
 
-function absurl(path)
-	path = path or ''
-	return (config'base_url' or ngx.var.scheme..'://'..ngx.var.host) .. path
+function scheme(s)
+	if s then
+		return scheme() == s
+	end
+	return headers'X-Forwarded-Proto' or ngx.var.scheme
 end
 
-function domain()
+function host(s)
+	if s then
+		return host() == s
+	end
 	return ngx.var.host
 end
 
+function port(p)
+	if p then
+		return port() == tonumber(p)
+	end
+	return tonumber(headers'X-Forwarded-Port' or ngx.var.server_port)
+end
+
+function absurl(path)
+	path = path or ''
+	return config'base_url' or
+		scheme()..'://'..host()..
+			(((scheme'https' and port(443)) or
+			  (scheme'http' and port(80))) and '' or ':'..port())..path
+end
+
 function email(user)
-	return string.format('%s@%s', assert(user), domain())
+	return string.format('%s@%s', assert(user), host())
 end
 
 function client_ip()
@@ -162,9 +185,9 @@ end
 
 function lang(s)
 	if s then
-		env()._lang = s
+		ngx.ctx.lang = s
 	else
-		return env()._lang or args'lang' or config('lang', 'en')
+		return ngx.ctx.lang or args'lang' or config('lang', 'en')
 	end
 end
 
@@ -207,7 +230,8 @@ function id_arg(id, s)
 		return tonumber((id:gsub('%-.*$', '')))
 	else --encode
 		s = s or ''
-		return tostring(id)..'-'..s:gsub('[ ]', '-'):lower() --TODO: strip all non-url chars!
+		--TODO: strip all non-url chars!
+		return tostring(id)..'-'..s:gsub('[ ]', '-'):lower()
 	end
 end
 
@@ -263,9 +287,9 @@ function record(out_content, ...)
 	return pass(out_content(...))
 end
 
-function html(str)
-	if str == nil then return '' end
-	return tostring(str):gsub('[&"<>\\]', function(c)
+function html(s)
+	if s == nil then return '' end
+	return tostring(s):gsub('[&"<>\\]', function(c)
 		if c == '&' then return '&amp;'
 		elseif c == '"' then return '\"'
 		elseif c == '\\' then return '\\\\'
@@ -447,7 +471,7 @@ end
 --filesystem API -------------------------------------------------------------
 
 function basepath(file)
-	return assert(config'webb_dir') .. '/' .. file
+	return assert(config'webb_dir')..(file and '/'..file or '')
 end
 
 local lfs = require'lfs'
@@ -459,9 +483,20 @@ function filepath(file) --file -> path (if exists)
 	return path
 end
 
-function readfile(file)
-	return assert(glue.readfile(basepath(file)))
+local function readfile_call(files, file)
+	local f = files[file]
+	if type(f) == 'function' then
+		return f(file)
+	elseif f then
+		return f
+	else
+		local s = glue.readfile(basepath(file))
+		return glue.assert(s, 'file not found: %s', file)
+	end
 end
+
+readfile = {} --{filename -> content | handler(filename)}
+setmetatable(readfile, {__call = readfile_call})
 
 --TODO: outfile(file) which skips the accumulation/concat
 --so it can work with very large files
@@ -474,9 +509,88 @@ function render_string(s, data)
 	return hige.render(s, data or env())
 end
 
-function render(file, data)
+function render_file(file, data)
 	return render_string(readfile(file), data)
 end
+
+function mustache_wrap(s, name)
+	return '<script type="text/mustache" id="'..name..
+		'_template">\n'..s..'\n</script>\n'
+end
+
+--TODO: make this parser more robust so we can have <script> tags in templates
+--without the <{{undefined}}/script> hack (mustache also needs it though).
+function mustache_unwrap(s, t)
+	t = t or {}
+	local i = 0
+	for name,s in s:gmatch('<script%s+type=?"text/mustache?"%s+'..
+		'id="?(.-)_template"?>(.-)</script>') do
+		t[name] = s
+		i = i + 1
+	end
+	return t, i
+end
+
+local template_names = {} --keep template names in insertion order
+
+local function add_template(templates, name, s)
+	rawset(templates, name, s)
+	table.insert(template_names, name)
+end
+
+--gather all the templates from the filesystem
+local load_templates = glue.memoize(function()
+	local t = {}
+	for file in lfs.dir(basepath()) do
+		if file:find'%.mu$' and
+			lfs.attributes(basepath(file), 'mode') == 'file'
+		then
+			t[#t+1] = file
+		end
+	end
+	table.sort(t)
+	for i,file in ipairs(t) do
+		local s = readfile(file)
+		local _, i = mustache_unwrap(s, template)
+		if i == 0 then --must be without the <script> tag
+			local name = file:gsub('%.mu$', '')
+			template[name] = s
+		end
+	end
+end)
+
+local function template_call(templates, name)
+	load_templates()
+	if not name then
+		return template_names
+	else
+		local s = glue.assert(templates[name], 'template not found: %s', name)
+		if type(s) == 'function' then
+			s = s(name)
+		end
+		return filter_lang(filter_comments(s))
+	end
+end
+
+template = {} --{template = html | handler(name)}
+setmetatable(template, {__call = template_call, __newindex = add_template})
+
+function render(name, ...)
+	return render_string(template(name), ...)
+end
+
+template.loading = [[
+<div class="loading_outer">
+	<div class="loading_middle">
+		<div class="loading_inner reload loading{{#error}}_error{{/error}}">
+		</div>
+	</div>
+</div>
+]]
+
+template.not_found = [[
+<h1>404 Not Found</h1>
+]]
 
 --LuaPages templates ---------------------------------------------------------
 
@@ -505,8 +619,8 @@ end
 
 --Lua scripts ----------------------------------------------------------------
 
-local function compile_lua_string(s)
-	local f = assert(loadstring(s))
+local function compile_lua_string(s, chunkname)
+	local f = assert(loadstring(s, chunkname))
 	return function(_env, ...)
 		setfenv(f, _env or env())
 		return f(...)
@@ -514,11 +628,7 @@ local function compile_lua_string(s)
 end
 
 local compile_lua = glue.memoize(function(file)
-	local f = assert(loadfile(basepath(file)))
-	return function(_env, ...)
-		setfenv(f, _env or env())
-		return f(...)
-	end
+	return compile_lua_string(readfile(file), file)
 end)
 
 function run_string(s, env, ...)
@@ -559,6 +669,8 @@ end
 --concatenated files preprocessor --------------------------------------------
 
 --NOTE: can also concatenate actions if the actions module is loaded.
+--NOTE: favors plain files over actions because it can generate etags without
+--actually reading the files.
 function catlist(listfile, ...)
 	local js = listfile:find'%.js%.cat$'
 	local sep = js and ';\n' or '\n'
@@ -567,24 +679,29 @@ function catlist(listfile, ...)
 	local t = {} --etag seeds
 	local c = {} --output generators
 	for file in readfile(listfile):gmatch'([^%s]+)' do
-		local path = filepath(file)
-		if path then --plain file, get its mtime
-			local mtime = lfs.attributes(path, 'modification')
-			table.insert(t, tostring(mtime))
+		if readfile[file] then --virtual file
+			table.insert(t, readfile(file))
 			table.insert(c, function() out(readfile(file)) end)
-		elseif action then --file not found, try an action
-			local s, found = record(action, file, ...)
-			if found then
-				table.insert(t, s)
-				table.insert(c, function() out(s) end)
-			else
-				error('file not found '..file)
-			end
 		else
-			error('file not found '..file)
+			local path = filepath(file)
+			if path then --plain file, get its mtime
+				local mtime = lfs.attributes(path, 'modification')
+				table.insert(t, tostring(mtime))
+				table.insert(c, function() out(readfile(file)) end)
+			elseif action then --file not found, try an action
+				local s, found = record(action, file, ...)
+				if found then
+					table.insert(t, s)
+					table.insert(c, function() out(s) end)
+				else
+					glue.assert(false, 'file not found: %s', file)
+				end
+			else
+				glue.assert(false, 'file not found: %s', file)
+			end
 		end
 	end
-	check_etag(table.concat(t, '\n'))
+	check_etag(table.concat(t, '\0'))
 
 	--output the content
 	for i,f in ipairs(c) do

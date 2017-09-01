@@ -325,15 +325,11 @@ function post(url, data, success, error, opt) {
 function load_content(dst, url, success, error, opt) {
 
 	var dst = $(dst)
-	function set_loading() {
-		return dst.html('<div class="loading_outer">'+
-						'<div class="loading_middle">'+
-							'<div class="loading_inner loading">'+
-							'</div>'+
-						'</div>'+
-					'</div>').find('.loading_inner')
+	function render_loading(data) {
+		render('loading', data, dst)
 	}
-	var slow_watch = setTimeout(set_loading, config('slow_loading_feedback_delay', 1500))
+	var slow_watch = setTimeout(render_loading,
+		config('slow_loading_feedback_delay', 1500))
 
 	var done = function() {
 		clearTimeout(slow_watch)
@@ -350,13 +346,11 @@ function load_content(dst, url, success, error, opt) {
 			},
 			error: function(xhr) {
 				done()
-				set_loading()
-					.removeClass('loading')
-					.addClass('loading_error')
-					.attr('title', xhr.responseText)
+				render_loading({error: xhr.responseText})
+				dst.find('.reload')
 					.click(function() {
-						set_loading()
-						load_content(dst, url, success, error)
+						render_loading()
+						load_content(dst, url, success, error, opt)
 					})
 				if (error)
 					error(xhr)
@@ -393,11 +387,13 @@ function template_object(name) {
 }
 
 function load_partial_(name) {
+	console.log(name)
 	return template_object(name).html()
 }
 
 function render(template_name, data, dst) {
 	var t = template_object(template_name).html()
+	console.log(t)
 	var s = Mustache.render(t, data || {}, load_partial_)
 	if (dst) {
 		dst = $(dst)
@@ -652,6 +648,8 @@ function url_changed() {
 	var handler = find_action(location.pathname)
 	if (handler)
 		handler()
+	else
+		render('not_found', null, '#main')
 }
 
 function setlink(a, path, params, hook) {

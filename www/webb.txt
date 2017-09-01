@@ -78,6 +78,8 @@ Here's a very basic website sketch that uses some webb features.
 Create a file `nginx-server.conf` and type in it:
 
 	listen 127.0.0.1:8882;
+	var $main_module "main"; --runs main.lua for every url
+	var $hide_errors true; --hide errors when crashing
 
 Type `./ngx-start` then check `http://127.0.0.1:8882`.
 
@@ -87,9 +89,10 @@ You should get a 500 error because `main.lua` (our main file) is missing.
 main.lua
 
 	require'webb'      -- required, obviously
+	require'action'    -- use the actions system for URL routing
 	require'query'     -- if using mysql
-	require'session'   -- if needing session tracking and/or user accounts
 	require'sendmail'  -- if sending mail
+	require'session'   -- if needing session tracking and/or user accounts
 	require'config'    -- config.lua file, see below
 	require'secrets'   -- secrets.lua file, see below
 	pp = require'pp'   -- optional, for debugging
@@ -100,8 +103,9 @@ main.lua
 		local path = args()
 
 		--action-based routing: looks for `a.html.lua`, `a.html.lp`,
-		--`a.html.cat`, `404.html.lua', `404.html.lp`, `404.html.cat`.
-		var found = action(unpack(path))
+		--`a.html.cat`, `404.html`, `404.html.lua', `404.html.lp`,
+		--`404.html.cat`.
+		var found = action(find_action(unpack(path)))
 
 		--exit with 404 (and no output) if an action was not found
 		check(found)
@@ -114,9 +118,6 @@ Note: only need to add the lines for which the value is different than below.
 
 	config('lang', 'en')              --the default language
 	config('root_action', 'home')     --the action to run for the '/' path
-	config('404_html_action', '404.html') --the 404 html action
-	config('404_png_action',  '404.png')  --the 404 png action
-	config('404_jpeg_action', '404.jpg')  --the 404 jpeg action
 
 	config('db_host', '127.0.0.1')    --the ip address of the local mysql server
 	config('db_port', 3306)           --the port of the local mysql server
@@ -254,7 +255,9 @@ REQUEST
 	args() -> t                               return path elements and query args
 	args(n) -> s | nil                        return the n'th path element
 	args(name) -> s | nil                     return query arg
-	domain() -> s                             get website domain
+	scheme([s]) -> s | t|f                    get/check request scheme
+	host([s]) -> s | t|f                      get/check request host
+	port([p]) -> p | t|f                      get/check server port
 	email(user) -> s                          get email address of user
 	client_ip() -> s                          get client's ip address
 	lang([s]) -> s                            get/set current language
@@ -295,16 +298,18 @@ JSON
 
 FILESYSTEM
 
-	basepath(file) -> path                    get filesystem path (unchecked)
+	basepath([file]) -> path                  get filesystem path (unchecked)
 	filepath(file) -> path                    get filesystem path if file exists
 	readfile(file) -> s                       get file contents
+	readfile.filename = s|handler(filename)   set virtual file contents
 
 MUSTACHE TEMPLATES
 
-	render_string(s[, env]) -> s              render a mustache template
-	render(file[, env]) -> s                  render a mustache template
-	template(name) -> s                       get a template from templates.html
-	render_template(name[, env]) -> s         render a template from templates.html
+	render_string(s[, env]) -> s              render a template from a string
+	render_file(file[, env]) -> s             render a template from a file
+	template(name) -> s                       get a template contents
+	template.name = contents | handler(name)  set a template contents or handler
+	render(name[, env]) -> s                  render a template
 
 LUAPAGES TEMPLATES
 
@@ -327,11 +332,15 @@ CATLISTS
 
 	catlist(file, args...)                    output a .cat file
 
+ACTION ALIASES
+
+	alias(lang, action, action_en)            set an action alias for a language
+	find_action(action, ...) -> action, ...   find action and set language
+	setlinks(s) -> s                          translate URLs based on aliases
+
 ACTIONS
 
 	action(name, args...) -> t|f              execute action (false if not found)
-	alias(lang, action, action_en)            set an action alias for a language
-	setlinks(s) -> s                          translate URLs in href attrs
 
 QUERY
 

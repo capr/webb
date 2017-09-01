@@ -31,6 +31,7 @@ local function try_call(func, ...)
 end
 
 try_call(function()
-	local handle_request = require'main'
+	local main_module = ngx.var.main_module or 'main'
+	local handle_request = require(main_module)
 	handle_request()
 end)

@@ -1,57 +1,7 @@
 --Webb Framework | action-based routing module
 --Written by Cosmin Apreutesei. Public Domain.
 
---action files
-
-local action_handlers = {
-	cat = function(action, ...)
-		catlist(action..'.cat', ...)
-	end,
-	lua = function(action, ...)
-		return run(action..'.lua', nil, ...)
-	end,
-	lp = function(action, ...)
-		include(action..'.lp')
-	end,
-}
-
-local actions_list = glue.keys(action_handlers, true)
-
-local function plain_file_action_handler(action)
-	out(readfile(action))
-end
-
-local actionfile = glue.memoize(function(action)
-	if filepath(action) then --action is a plain file
-		return plain_file_action_handler
-	end
-	local ret_file, ret_handler
-	for i,ext in ipairs(actions_list) do
-		local file = action..'.'..ext
-		if filepath(file) then
-			assert(not ret_file, 'multiple action files for action '..action)
-			ret_file = file
-			ret_handler = action_handlers[ext]
-		end
-	end
-	return ret_handler
-end)
-
---mime type inferrence
-
-local mime_types = {
-	html = 'text/html',
-	txt  = 'text/plain',
-	css  = 'text/css',
-	json = 'application/json',
-	js   = 'application/javascript',
-	jpg  = 'image/jpeg',
-	jpeg = 'image/jpeg',
-	png  = 'image/png',
-	ico  = 'image/ico',
-}
-
---action aliases
+--action aliases -------------------------------------------------------------
 
 --NOTE: it is assumed that action names are always in english even if they
 --actually request a page in the default language which can configured
@@ -139,16 +89,67 @@ function find_action(action, ...)
 	return action, ...
 end
 
---output filters
-
+--html output filter for rewriting links based on current language aliases
 function setlinks(s)
 	local function repl(prefix, s)
 		return prefix..lang_url(s)
 	end
-	s = s:gsub('( href=")([^"]+)', repl)
-	s = s:gsub('( href=)([^ >]+)', repl)
+	s = s:gsub('(%shref=")([^"]+)', repl)
+	s = s:gsub('(%shref=)([^ >]+)', repl)
 	return s
 end
+
+--action files ---------------------------------------------------------------
+
+local action_handlers = {
+	cat = function(action, ...)
+		catlist(action..'.cat', ...)
+	end,
+	lua = function(action, ...)
+		return run(action..'.lua', nil, ...)
+	end,
+	lp = function(action, ...)
+		include(action..'.lp')
+	end,
+}
+
+local actions_list = glue.keys(action_handlers, true)
+
+local function plain_file_action_handler(action)
+	out(readfile(action))
+end
+
+local actionfile = glue.memoize(function(action)
+	if readfile[action] or filepath(action) then --action is a plain file
+		return plain_file_action_handler
+	end
+	local ret_file, ret_handler
+	for i,ext in ipairs(actions_list) do
+		local file = action..'.'..ext
+		if readfile[file] or filepath(file) then
+			assert(not ret_file, 'multiple action files for action '..action)
+			ret_file = file
+			ret_handler = action_handlers[ext]
+		end
+	end
+	return ret_handler
+end)
+
+--mime type inferrence
+
+local mime_types = {
+	html = 'text/html',
+	txt  = 'text/plain',
+	css  = 'text/css',
+	json = 'application/json',
+	js   = 'application/javascript',
+	jpg  = 'image/jpeg',
+	jpeg = 'image/jpeg',
+	png  = 'image/png',
+	ico  = 'image/ico',
+}
+
+--output filters
 
 local function html_filter(handler, action, ...)
 	local s = record(handler, action, ...)
@@ -171,15 +172,15 @@ local mime_type_filters = {
 	['application/json'] = json_filter,
 }
 
-local not_found_actions = {
-	['text/html']  = config('html_404_action', '404.html'),
-	['image/png']  = config('png_404_action',  '404.png'),
-	['image/jpeg'] = config('jpeg_404_action', '404.jpg'),
-}
-
 --logic
 
-local function run_action(actions, action, ...)
+local not_found_actions = {
+	['text/html']  = '404.html',
+	['image/png']  = '404.png',
+	['image/jpeg'] = '404.jpg',
+}
+
+local function action_call(actions, action, ...)
 	local ext = action:match'%.([^%.]+)$' --get the action's file extension
 	local action_no_ext = action
 	if not ext then --add the default .html extension to the action
@@ -188,16 +189,22 @@ local function run_action(actions, action, ...)
 	end
 	local mime = mime_types[ext]
 	local handler =
-		actionfile(action) --look on the filesystem
-		or actions[action_no_ext] --look in the default action table
+		actions[action_no_ext] --look in the default action table
 		or actions[action] --look again with .html extension
+		or actionfile(action) --look on the filesystem
 	if not handler then --look for a 404 handler
 		local nf_action = not_found_actions[mime]
 		if not nf_action or nf_action == action then
 			--the 404 action itself was not found
 			return false
 		end
-		return run_action(actions, nf_action, ...)
+		return action_call(actions, nf_action, ...)
+	end
+	if type(handler) ~= 'function' then
+		local s = handler
+		handler = function()
+			return s
+		end
 	end
 	if mime then
 		setheader('content_type', mime)
@@ -212,9 +219,9 @@ local function run_action(actions, action, ...)
 end
 
 action = {} --{action=handler}
-setmetatable(action, {__call = run_action})
+setmetatable(action, {__call = action_call})
 
---built-in actions
+--built-in actions -----------------------------------------------------------
 
 action['404.html'] = function(action, ...)
 	check(false, '<h1>File Not Found</h1>')
@@ -230,11 +237,10 @@ action['config.js'] = function(action, ...)
 
 	local cjson = require'cjson'
 
-	--client doesn't set a default for these and the user is not required
-	--to do that in config.lua either, so we set those here once again.
+	--initialize some required config values with defaults.
 	config('lang', 'en')
 	config('root_action', 'home')
-	config('templates_action', 'templates')
+	config('templates_action', '_templates')
 
 	local function C(name)
 		if config(name) == nil then return end
@@ -244,9 +250,9 @@ action['config.js'] = function(action, ...)
 	end
 
 	C'lang'
+	C'aliases'
 	C'root_action'
 	C'templates_action'
-	C'aliases'
 
 	C'facebook_app_id'
 	C'analytics_ua'
@@ -257,5 +263,12 @@ end
 action['strings.js'] = function(_, ...)
 	if lang() == 'en' then return end
 	action('strings.'..lang()..'.js', ...)
+end
+
+--TODO: how to use config('templates_action') instead of hardcoding the name?
+function action._templates()
+	for _,name in ipairs(template()) do
+		out(mustache_wrap(template(name), name))
+	end
 end
 

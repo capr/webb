@@ -348,4 +348,3 @@ action.account = function() {
 	render('account', null, '#main')
 	account_widget()
 }
-

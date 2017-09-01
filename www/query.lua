@@ -189,7 +189,7 @@ function nodrop(on)
 	if on ~= nil then
 		ngx.ctx.nodrop = on
 	else
-		return ngx.ctx.nodrop or false
+		return ngx.ctx.nodrop or (not config('allow_drop', false))
 	end
 end
 

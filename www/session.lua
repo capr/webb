@@ -44,7 +44,7 @@ function authenticate(a)
 	return auth[a and a.type or 'session'](a)
 end
 
-local userinfo = once(function(uid)
+local function userinfo(uid)
 	if not uid then return {} end
 	local t = query1([[
 		select
@@ -71,11 +71,13 @@ local userinfo = once(function(uid)
 	t.haspass = tonumber(t.haspass) == 1
 	t.admin = t.admin == 1
 	return t
-end)
+end
 
 function clear_userinfo_cache(uid)
 	once(userinfo, true, uid)
 end
+
+local userinfo = once(userinfo)
 
 --session-cookie authentication ----------------------------------------------
 
