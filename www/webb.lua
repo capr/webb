@@ -245,7 +245,7 @@ local function default_outfunc(s)
 	ngx.print(s)
 end
 
-local function outbuf(t)
+function stringbuffer(t)
 	t = t or {}
 	return function(s)
 		if s then
@@ -257,7 +257,7 @@ local function outbuf(t)
 end
 
 function push_out(f)
-	ngx.ctx.outfunc = f or outbuf()
+	ngx.ctx.outfunc = f or stringbuffer()
 	if not ngx.ctx.outfuncs then
 		ngx.ctx.outfuncs = {}
 	end
@@ -412,7 +412,12 @@ local function http_error(code, msg)
 	error(t, 2)
 end
 
-redirect = ngx.redirect
+function redirect(url, status)
+	if lang_url then
+		url = lang_url(url)
+	end
+	return ngx.redirect(url, status)
+end
 
 function check(ret, err)
 	if ret then return ret end
@@ -486,7 +491,7 @@ end
 local function readfile_call(files, file)
 	local f = files[file]
 	if type(f) == 'function' then
-		return f(file)
+		return f()
 	elseif f then
 		return f
 	else
@@ -502,6 +507,10 @@ setmetatable(readfile, {__call = readfile_call})
 --so it can work with very large files
 
 --mustache templates ---------------------------------------------------------
+
+local function underscores(name)
+	return name:gsub('-', '_')
+end
 
 local hige = require'hige'
 
@@ -525,6 +534,7 @@ function mustache_unwrap(s, t)
 	local i = 0
 	for name,s in s:gmatch('<script%s+type=?"text/mustache?"%s+'..
 		'id="?(.-)_template"?>(.-)</script>') do
+		name = underscores(name)
 		t[name] = s
 		i = i + 1
 	end
@@ -534,6 +544,7 @@ end
 local template_names = {} --keep template names in insertion order
 
 local function add_template(templates, name, s)
+	name = underscores(name)
 	rawset(templates, name, s)
 	table.insert(template_names, name)
 end
@@ -554,6 +565,7 @@ local load_templates = glue.memoize(function()
 		local _, i = mustache_unwrap(s, template)
 		if i == 0 then --must be without the <script> tag
 			local name = file:gsub('%.mu$', '')
+			name = underscores(name)
 			template[name] = s
 		end
 	end
@@ -564,9 +576,10 @@ local function template_call(templates, name)
 	if not name then
 		return template_names
 	else
+		name = underscores(name)
 		local s = glue.assert(templates[name], 'template not found: %s', name)
 		if type(s) == 'function' then
-			s = s(name)
+			s = s()
 		end
 		return filter_lang(filter_comments(s))
 	end
@@ -578,19 +591,6 @@ setmetatable(template, {__call = template_call, __newindex = add_template})
 function render(name, ...)
 	return render_string(template(name), ...)
 end
-
-template.loading = [[
-<div class="loading_outer">
-	<div class="loading_middle">
-		<div class="loading_inner reload loading{{#error}}_error{{/error}}">
-		</div>
-	</div>
-</div>
-]]
-
-template.not_found = [[
-<h1>404 Not Found</h1>
-]]
 
 --LuaPages templates ---------------------------------------------------------
 

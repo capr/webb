@@ -345,6 +345,7 @@ action.account = function() {
 		//
 	})
 
+	setheader('account')
 	render('account', null, '#main')
 	account_widget()
 }

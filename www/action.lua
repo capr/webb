@@ -17,13 +17,24 @@ local aliases = {} --{alias={lang=, action=}}
 local aliases_json = {to_en = {}, to_lang = {}}
 config('aliases', aliases_json) --we pass those to the client
 
-function alias(alias_lang, alias_action, en_action)
+local function action_name(action)
+	return action:gsub('-', '_')
+end
+
+local function action_urlname(action)
+	return action:gsub('_', '-')
+end
+
+function alias(en_action, alias_action, alias_lang)
+	local default_lang = config('lang', 'en')
+	alias_lang = alias_lang or default_lang
+	alias_action = action_name(alias_action)
+	en_action = action_name(en_action)
 	aliases[alias_action] = {lang = alias_lang, action = en_action}
 	--if the default language is not english and we're making
 	--an alias for the default language, then we can safely assign
 	--the english action name for the english language, whereas before
 	--we would use the english action name for the default language.
-	local default_lang = config('lang', 'en')
 	if default_lang ~= 'en' and alias_lang == default_lang then
 		if not aliases[en_action] then --user can override this
 			aliases[en_action] = {lang = 'en', action = en_action}
@@ -40,7 +51,7 @@ end
 
 local function url_action(s)
 	local t = decode_url(s)
-	return t[1] == '' and t[2] or nil
+	return t[1] == '' and t[2] and action_name(t[2]) or nil
 end
 
 --given an url (in encoded or decoded form), if it's an action url,
@@ -57,7 +68,7 @@ function lang_url(s, target_lang)
 	end
 	local is_root = t[2] == ''
 	if is_root then
-		action = config('root_action', 'home')
+		action = action_name(config('root_action', 'home'))
 	end
 	local at = aliases_json.to_lang[action]
 	local lang_action = at and at[target_lang]
@@ -68,6 +79,7 @@ function lang_url(s, target_lang)
 	elseif target_lang ~= default_lang then
 		t.lang = target_lang
 	end
+	t[2] = action_urlname(t[2])
 	return url(t)
 end
 
@@ -75,8 +87,9 @@ end
 --and change the current language if necessary.
 function find_action(action, ...)
 	if action == '' then --root action in current language
-		action = config('root_action', 'home')
+		action = action_name(config('root_action', 'home'))
 	else
+		action = action_name(action)
 		local alias = aliases[action] --look for a regional alias
 		if alias then
 			if not args'lang' then --?lang= has priority
@@ -85,7 +98,6 @@ function find_action(action, ...)
 			action = alias.action
 		end
 	end
-	action = action:gsub('-', '_') --make actions easier to declare
 	return action, ...
 end
 
@@ -101,38 +113,42 @@ end
 
 --action files ---------------------------------------------------------------
 
-local action_handlers = {
-	cat = function(action, ...)
-		catlist(action..'.cat', ...)
+local file_handlers = {
+	cat = function(file, ...)
+		catlist(file, ...)
 	end,
-	lua = function(action, ...)
-		return run(action..'.lua', nil, ...)
+	lua = function(file, ...)
+		return run(file, nil, ...)
 	end,
-	lp = function(action, ...)
-		include(action..'.lp')
+	lp = function(file, ...)
+		include(file)
 	end,
 }
 
-local actions_list = glue.keys(action_handlers, true)
+local actions_list = glue.keys(file_handlers, true)
 
-local function plain_file_action_handler(action)
-	out(readfile(action))
+local function plain_file_handler(file)
+	out(readfile(file))
 end
 
 local actionfile = glue.memoize(function(action)
-	if readfile[action] or filepath(action) then --action is a plain file
-		return plain_file_action_handler
-	end
 	local ret_file, ret_handler
-	for i,ext in ipairs(actions_list) do
-		local file = action..'.'..ext
-		if readfile[file] or filepath(file) then
-			assert(not ret_file, 'multiple action files for action '..action)
-			ret_file = file
-			ret_handler = action_handlers[ext]
+	if readfile[action] or filepath(action) then --action is a plain file
+		ret_file = action
+		ret_handler = plain_file_handler
+	else
+		for i,ext in ipairs(actions_list) do
+			local file = action..'.'..ext
+			if readfile[file] or filepath(file) then
+				assert(not ret_file, 'multiple action files for action '..action)
+				ret_file = file
+				ret_handler = file_handlers[ext]
+			end
 		end
 	end
-	return ret_handler
+	return ret_handler and function(...)
+		return ret_handler(ret_file, ...)
+	end
 end)
 
 --mime type inferrence
@@ -174,73 +190,115 @@ local mime_type_filters = {
 
 --logic
 
-local not_found_actions = {
-	['text/html']  = '404.html',
-	['image/png']  = '404.png',
-	['image/jpeg'] = '404.jpg',
-}
-
-local function action_call(actions, action, ...)
-	local ext = action:match'%.([^%.]+)$' --get the action's file extension
-	local action_no_ext = action
+--get the action's normalized name and extension
+local function action_ext(action)
+	local ext = action:match'%.([^%.]+)$'
 	if not ext then --add the default .html extension to the action
 		ext = 'html'
 		action = action .. '.' .. ext
 	end
-	local mime = mime_types[ext]
+	return action, ext
+end
+
+local actions = {} --{action -> handler | s}
+
+local function action_handler(action_no_ext, action)
 	local handler =
 		actions[action_no_ext] --look in the default action table
 		or actions[action] --look again with .html extension
 		or actionfile(action) --look on the filesystem
-	if not handler then --look for a 404 handler
-		local nf_action = not_found_actions[mime]
-		if not nf_action or nf_action == action then
-			--the 404 action itself was not found
-			return false
+	if handler then
+		if type(handler) ~= 'function' then
+			local s = handler
+			handler = function()
+				return s
+			end
 		end
-		return action_call(actions, nf_action, ...)
+		return handler
 	end
-	if type(handler) ~= 'function' then
-		local s = handler
-		handler = function()
-			return s
+end
+
+--exec an action without setting content type, looking for a 404 handler
+--or filtering the output based on mime type, instead returns whatever
+--the action returns (good for exec'ing json actions which return a table).
+local function pass(arg1, ...)
+	if not arg1 then
+		return true, ...
+	else
+		return arg1, ...
+	end
+end
+function exec(action_no_ext, ...)
+	local action, ext = action_ext(action_no_ext)
+	local handler = action_handler(action_no_ext, action)
+	if not handler then return false end
+	return pass(handler(...))
+end
+
+local function action_call(actions, action_no_ext, ...)
+	local action, ext = action_ext(action_no_ext)
+	local handler = action_handler(action_no_ext, action)
+	local mime = mime_types[ext]
+	if not handler then
+		local not_found_actions = {
+			['text/html']  = config('404_html_action', '404.html'),
+			['image/png']  = config('404_png_action', '404.png'),
+			['image/jpeg'] = config('404_jpeg_action', '404.jpg'),
+		}
+		local nf_action = not_found_actions[mime]
+		if not nf_action or action == nf_action then
+			return false --the 404 action itself was not found
 		end
+		return action_call(actions, nf_action, action_no_ext, ...)
 	end
 	if mime then
 		setheader('content_type', mime)
 	end
 	local filter = mime_type_filters[mime]
 	if filter then
-		filter(handler, action, ...)
+		filter(handler, ...)
 	else
-		handler(action, ...)
+		handler(...)
 	end
 	return true
 end
 
-action = {} --{action=handler}
+action = actions
 setmetatable(action, {__call = action_call})
 
---built-in actions -----------------------------------------------------------
+--built-in actions & templates -----------------------------------------------
 
-action['404.html'] = function(action, ...)
+template.loading = [[
+<div class="loading_outer">
+	<div class="loading_middle">
+		<div class="loading_inner reload loading{{#error}}_error{{/error}}">
+		</div>
+	</div>
+</div>
+]]
+
+template.not_found = [[
+<h1>404 Not Found</h1>
+]]
+
+action['404.html'] = function()
 	check(false, '<h1>File Not Found</h1>')
 end
 
-action['404.png'] = function(action, ...)
+action['404.png'] = function()
 	redirect'/1x1.png'
 end
 
 action['404.jpg'] = action['404.png']
 
-action['config.js'] = function(action, ...)
+action['config.js'] = function()
 
 	local cjson = require'cjson'
 
 	--initialize some required config values with defaults.
 	config('lang', 'en')
 	config('root_action', 'home')
-	config('templates_action', '_templates')
+	config('templates_action', '__templates')
 
 	local function C(name)
 		if config(name) == nil then return end
@@ -260,13 +318,12 @@ action['config.js'] = function(action, ...)
 
 end
 
-action['strings.js'] = function(_, ...)
+action['strings.js'] = function(...)
 	if lang() == 'en' then return end
 	action('strings.'..lang()..'.js', ...)
 end
 
---TODO: how to use config('templates_action') instead of hardcoding the name?
-function action._templates()
+function action.__templates()
 	for _,name in ipairs(template()) do
 		out(mustache_wrap(template(name), name))
 	end

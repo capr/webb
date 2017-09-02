@@ -117,7 +117,12 @@ config.lua
 Note: only need to add the lines for which the value is different than below.
 
 	config('lang', 'en')              --the default language
+
 	config('root_action', 'home')     --the action to run for the '/' path
+	config('templates_action', '_templates')
+	config('404_html_action', '404.html')
+	config('404_png_action', '404.png')
+	config('404_jpeg_action', '404.jpg')
 
 	config('db_host', '127.0.0.1')    --the ip address of the local mysql server
 	config('db_port', 3306)           --the port of the local mysql server
@@ -276,6 +281,7 @@ OUTPUT
 	out(s)                                    output a string
 	push_out([f])                             push output function or buffer
 	pop_out() -> s                            pop output function and flush it
+	stringbuffer([t]) -> f(s)/f()->s          create a string buffer
 	record(f) -> s                            run f and collect out() calls
 	out_buffering() -> t | f                  check if we're buffering output
 	setheader(name, val)                      set a header if not buffering
@@ -334,13 +340,14 @@ CATLISTS
 
 ACTION ALIASES
 
-	alias(lang, action, action_en)            set an action alias for a language
+	alias(action_en, lang, action)            set an action alias for a language
 	find_action(action, ...) -> action, ...   find action and set language
 	setlinks(s) -> s                          translate URLs based on aliases
 
 ACTIONS
 
-	action(name, args...) -> t|f              execute action (false if not found)
+	action(name, args...) -> t | f            execute action (false if not found)
+	exec(name, args...) -> ret... | t         execute action without filtering
 
 QUERY
 

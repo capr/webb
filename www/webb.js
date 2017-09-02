@@ -20,9 +20,8 @@ function config(name, val) {
 	return C_[name]
 }
 
-// global lang() for conditionally setting S() values based on language.
 function lang() {
-	return document.documentElement.lang || config('lang')
+	return document.documentElement.lang
 }
 
 // string formatting ---------------------------------------------------------
@@ -376,25 +375,22 @@ function load_main(url, success, error, opt) {
 function load_templates(success) {
 	var templates_html = config('templates_action')
 	get(lang_url('/'+templates_html), function(s) {
-		$('#templates').html(s)
+		$('#__templates').html(s)
 		if (success)
 			success()
 	})
 }
 
 function template_object(name) {
-	return $('#' + name + '_template')
+	return $('#' + underscores(name) + '_template')
 }
 
 function load_partial_(name) {
-	console.log(name)
 	return template_object(name).html()
 }
 
-function render(template_name, data, dst) {
-	var t = template_object(template_name).html()
-	console.log(t)
-	var s = Mustache.render(t, data || {}, load_partial_)
+function render_string(s, data, dst) {
+	var s = Mustache.render(s, data || {}, load_partial_)
 	if (dst) {
 		dst = $(dst)
 		var id = dst.attr('id')
@@ -403,6 +399,11 @@ function render(template_name, data, dst) {
 		setlinks(dst)
 	} else
 		return s
+}
+
+function render(template_name, data, dst) {
+	var s = template_object(template_name).html()
+	return render_string(s, data, dst)
 }
 
 function render_multi_column(template_name, items, col_count) {
@@ -527,6 +528,16 @@ console.log(url(['a', 'b'], {a: true, b: 1}))
 
 // actions -------------------------------------------------------------------
 
+function underscores(action) {
+	return action.replace(/-/g, '_')
+}
+
+action_name = underscores
+
+function action_urlname(action) {
+	return action.replace(/_/g, '-')
+}
+
 function decode_url(path, params) {
 	if (typeof path == 'string') {
 		var t = url(path)
@@ -542,7 +553,7 @@ function decode_url(path, params) {
 // extract the action from a decoded url
 function url_action(t) {
 	if (t.path[0] == '' && t.path.length >= 2)
-		return t.path[1]
+		return action_name(t.path[1])
 }
 
 // given an url (in encoded or decoded form), if it's an action url,
@@ -552,21 +563,22 @@ function url_action(t) {
 function lang_url(path, params, target_lang) {
 	var t = decode_url(path, params)
 	var default_lang = config('lang')
-	var target_lang = target_lang || t.lang || lang()
+	var target_lang = target_lang || t.params.lang || lang()
 	var action = url_action(t)
 	if (action === undefined)
 		return url(t)
-	var is_root = t[1] == ''
+	var is_root = t.path[1] == ''
 	if (is_root)
-		action = config('root_action')
+		action = action_name(config('root_action'))
 	var at = config('aliases').to_lang[action]
 	var lang_action = at && at[target_lang]
 	if (lang_action) {
 		if (! (is_root && target_lang == default_lang))
-			t[1] = lang_action
+			t.path[1] = lang_action
 	} else if (target_lang != default_lang) {
 		t.params.lang = target_lang
 	}
+	t.path[1] = action_urlname(t.path[1])
 	return url(t)
 }
 
@@ -583,7 +595,7 @@ function find_action(path) {
 		act = config('root_action')
 	else // an alias or the act name directly
 		act = config('aliases').to_en[act] || act
-	act = act.replace('-', '_') // make it easier to declare actions
+	act = action_name(act)
 	var handler = action[act] // find a handler
 	if (!handler) {
 		// no handler, find a static template
@@ -653,10 +665,11 @@ function url_changed() {
 }
 
 function setlink(a, path, params, hook) {
-	$(a).attr('href', lang_url(path, params))
-		.click(function(event) {
-			var handler = find_action(path)
-			if (! (handler || hook)) return
+	var url = lang_url(path, params)
+	$(a).attr('href', url)
+	var handler = find_action(url)
+	if (!(handler || hook)) return
+	$(a).click(function(event) {
 			// shit/ctrl+click passes through to open in new window or tab
 			if (event.shiftKey || event.ctrlKey) return
 			event.preventDefault()
@@ -714,14 +727,6 @@ function setscroll() {
 function scroll_top() {
 	set_state_top(0)
 	$(window).scrollTop(0)
-}
-
-function init_actions() {
-	$(function() {
-		load_templates(function() {
-			url_changed()
-		})
-	})
 }
 
 // UI patterns ---------------------------------------------------------------
