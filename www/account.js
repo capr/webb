@@ -63,15 +63,18 @@ function init_admin() {
 	})
 }
 
+function allow(truth) {
+	if(!truth)
+		exec('/account')
+}
+
 // account widget ------------------------------------------------------------
 
 // account_widget({options...}) -> account
 // account.validate() -> true|nothing
 function account_widget(acc) {
 
-	acc = $.extend({
-		section: '#account_section',
-	}, acc)
+	acc = $.extend({}, acc)
 
 	var want_anonymous = false
 	var email_taken = false
@@ -144,7 +147,7 @@ function account_widget(acc) {
 
 		$('#btn_no_account').click(function() {
 			want_anonymous = true
-			login({type: 'anonymous'})
+			login({type: 'anonymous'}, null, null, {dst: acc.section})
 		})
 
 		$('#email').keypress(function(e) {
@@ -205,14 +208,14 @@ function account_widget(acc) {
 		$('#btn_login').click(function() {
 			if (validate_login()) {
 				$(this).prop('disabled', true)
-				login(pass_auth('login'), null, login_failed)
+				login(pass_auth('login'), null, login_failed, {dst: acc.section})
 			}
 		})
 
 		$('#btn_create_account').click(function() {
 			if (validate_login()) {
 				$(this).prop('disabled', true)
-				login(pass_auth('create'), null, login_failed)
+				login(pass_auth('create'), null, login_failed, {dst: acc.section})
 			}
 		})
 	}
@@ -297,7 +300,7 @@ function account_widget(acc) {
 				phone: $('#usr_phone').val(),
 			}, function(usr) {
 				notify(S('changes_saved', 'Changes saved'))
-			}, login_failed)
+			}, login_failed, {dst: acc.section})
 		})
 
 		$('#btn_cancel').click(function() {
@@ -332,20 +335,8 @@ function account_widget(acc) {
 			create_user_section(usr)
 	})
 
-	login()
+	login(null, null, null, {dst: acc.section})
 
 	return acc
 }
 
-// account page --------------------------------------------------------------
-
-action.account = function() {
-
-	listen('usr.account_page.current_action', function() {
-		//
-	})
-
-	setheader('account')
-	render('account', null, '#main')
-	account_widget()
-}

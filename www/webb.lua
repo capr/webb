@@ -412,12 +412,7 @@ local function http_error(code, msg)
 	error(t, 2)
 end
 
-function redirect(url, status)
-	if lang_url then
-		url = lang_url(url)
-	end
-	return ngx.redirect(url, status)
-end
+redirect = ngx.redirect
 
 function check(ret, err)
 	if ret then return ret end
@@ -512,29 +507,36 @@ local function underscores(name)
 	return name:gsub('-', '_')
 end
 
-local hige = require'hige'
+local lustache = require'lustache'
 
-function render_string(s, data)
-	return hige.render(s, data or env())
+function render_string(s, data, partials)
+	return (lustache:render(s, data or env(), partials))
 end
 
-function render_file(file, data)
-	return render_string(readfile(file), data)
+function render_file(file, data, partials)
+	return render_string(readfile(file), data, partials)
 end
 
 function mustache_wrap(s, name)
-	return '<script type="text/mustache" id="'..name..
+	return '<script type="text/x-mustache" id="'..name..
 		'_template">\n'..s..'\n</script>\n'
+end
+
+function check_template(name, file)
+	glue.assert(not template[name], 'duplicate template "%s" in %s', name, file)
 end
 
 --TODO: make this parser more robust so we can have <script> tags in templates
 --without the <{{undefined}}/script> hack (mustache also needs it though).
-function mustache_unwrap(s, t)
+function mustache_unwrap(s, t, file)
 	t = t or {}
 	local i = 0
-	for name,s in s:gmatch('<script%s+type=?"text/mustache?"%s+'..
+	for name,s in s:gmatch('<script%s+type=?"text/x%-mustache?"%s+'..
 		'id="?(.-)_template"?>(.-)</script>') do
 		name = underscores(name)
+		if t == template then
+			check_template(name, file)
+		end
 		t[name] = s
 		i = i + 1
 	end
@@ -543,9 +545,9 @@ end
 
 local template_names = {} --keep template names in insertion order
 
-local function add_template(templates, name, s)
+local function add_template(template, name, s)
 	name = underscores(name)
-	rawset(templates, name, s)
+	rawset(template, name, s)
 	table.insert(template_names, name)
 end
 
@@ -562,22 +564,23 @@ local load_templates = glue.memoize(function()
 	table.sort(t)
 	for i,file in ipairs(t) do
 		local s = readfile(file)
-		local _, i = mustache_unwrap(s, template)
+		local _, i = mustache_unwrap(s, template, file)
 		if i == 0 then --must be without the <script> tag
 			local name = file:gsub('%.mu$', '')
 			name = underscores(name)
+			check_template(name, file)
 			template[name] = s
 		end
 	end
 end)
 
-local function template_call(templates, name)
+local function template_call(template, name)
 	load_templates()
 	if not name then
 		return template_names
 	else
 		name = underscores(name)
-		local s = glue.assert(templates[name], 'template not found: %s', name)
+		local s = glue.assert(template[name], 'template not found: %s', name)
 		if type(s) == 'function' then
 			s = s()
 		end
@@ -588,8 +591,14 @@ end
 template = {} --{template = html | handler(name)}
 setmetatable(template, {__call = template_call, __newindex = add_template})
 
-function render(name, ...)
-	return render_string(template(name), ...)
+local partials = {}
+local function get_partial(partials, name)
+	return template(name)
+end
+setmetatable(partials, {__index = get_partial})
+
+function render(name, data)
+	return render_string(template(name), data, partials)
 end
 
 --LuaPages templates ---------------------------------------------------------
@@ -678,7 +687,9 @@ function catlist(listfile, ...)
 	--generate and check etag
 	local t = {} --etag seeds
 	local c = {} --output generators
-	for file in readfile(listfile):gmatch'([^%s]+)' do
+	local s = readfile(listfile)
+	s = s:gsub('//[^\n\r]*', '') --strip out comments
+	for file in s:gmatch'([^%s]+)' do
 		if readfile[file] then --virtual file
 			table.insert(t, readfile(file))
 			table.insert(c, function() out(readfile(file)) end)

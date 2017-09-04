@@ -245,7 +245,7 @@ function getback(key) {
 // 1. optionally restartable and abortable on an id.
 // 2. triggers an optional abort() event.
 // 3. presence of data defaults to POST method.
-// 4. non-string data turns json.
+// 4. non-string data is converted into json.
 
 var g_xhrs = {} //{id: xhr}
 
@@ -262,8 +262,7 @@ function abort_all() {
 	g_xhrs = {}
 }
 
-function ajax(url, opt) {
-	opt = opt || {}
+function _ajax(url, opt) {
 	var id = opt.id
 	if (id)
 		abort(id)
@@ -274,7 +273,7 @@ function ajax(url, opt) {
 	var type = opt.type || (data ? 'POST' : 'GET')
 
 	var xhr = $.ajax({
-		url: url,
+		url: lang_url(url),
 		success: function(data) {
 			if (id)
 				delete g_xhrs[id]
@@ -302,6 +301,58 @@ function ajax(url, opt) {
 	return id
 }
 
+// ajax request with UI feedback for slow loading and for failure.
+// automatically aborts on ajax() calls over the same dest id.
+// NOTE: render() also aborts pending ajax calls on its id.
+function ajax(url, opt) {
+	opt = opt || {}
+
+	var dst = opt.dst
+	if (!dst)
+		return _ajax(url, opt)
+
+	dst = $(dst)
+
+	function render_loading(data) {
+		dst.html(render(config('loading_template'), data))
+		setlinks(dst)
+	}
+
+	var slow_watch = setTimeout(render_loading,
+		config('slow_loading_feedback_delay', 1500))
+
+	var done = function() {
+		clearTimeout(slow_watch)
+		dst.html('')
+	}
+
+	return _ajax(url,
+		$.extend({}, opt, {
+			id: dst.attr('id'),
+			success: function(data) {
+				done()
+				if (opt.success)
+					opt.success(data)
+			},
+			error: function(xhr) {
+				done()
+				render_loading({error: xhr.responseText || xhr.statusText})
+				dst.find('.reload')
+					.click(function() {
+						render_loading()
+						ajax(url, opt)
+					})
+				if (opt.error)
+					opt.error(xhr)
+			},
+			abort: function(xhr) {
+				done()
+				if (opt.abort)
+					opt.abort(xhr)
+			},
+		}))
+}
+
 function get(url, success, error, opt) {
 	return ajax(url,
 		$.extend({
@@ -319,74 +370,37 @@ function post(url, data, success, error, opt) {
 		}, opt))
 }
 
-// ajax request with UI feedback for slow loading and failure.
-// automatically aborts on load_content() and render() calls over the same dst.
-function load_content(dst, url, success, error, opt) {
-
-	var dst = $(dst)
-	function render_loading(data) {
-		render('loading', data, dst)
-	}
-	var slow_watch = setTimeout(render_loading,
-		config('slow_loading_feedback_delay', 1500))
-
-	var done = function() {
-		clearTimeout(slow_watch)
-		dst.html('')
-	}
-
-	return ajax(url,
+// ajax request on the main pane: restore scroll position on success.
+function load_main(url, success, error, opt) {
+	ajax(url,
 		$.extend({
-			id: $(dst).attr('id'),
+			dst: '#main',
 			success: function(data) {
-				done()
 				if (success)
 					success(data)
+				setscroll()
 			},
-			error: function(xhr) {
-				done()
-				render_loading({error: xhr.responseText})
-				dst.find('.reload')
-					.click(function() {
-						render_loading()
-						load_content(dst, url, success, error, opt)
-					})
-				if (error)
-					error(xhr)
-			},
-			abort: done,
+			error: error,
 		}, opt))
-}
-
-// ajax request on the main pane: restore scroll position.
-function load_main(url, success, error, opt) {
-	load_content('#main', url,
-		function(data) {
-			if (success)
-				success(data)
-			setscroll()
-		},
-		error,
-		opt)
 }
 
 // templating ----------------------------------------------------------------
 
 function load_templates(success) {
-	var templates_html = config('templates_action')
-	get(lang_url('/'+templates_html), function(s) {
+	get('/'+config('templates_action'), function(s) {
 		$('#__templates').html(s)
 		if (success)
 			success()
 	})
 }
 
-function template_object(name) {
-	return $('#' + underscores(name) + '_template')
+function template(name) {
+	var t = $('#' + _underscores(name) + '_template')
+	return t.length > 0 && t.html() || undefined
 }
 
 function load_partial_(name) {
-	return template_object(name).html()
+	return template(name)
 }
 
 function render_string(s, data, dst) {
@@ -394,15 +408,18 @@ function render_string(s, data, dst) {
 	if (dst) {
 		dst = $(dst)
 		var id = dst.attr('id')
-		abort(id)
+		if (id)
+			abort(id)
 		dst.html(s)
 		setlinks(dst)
+		if (id == 'main')
+			settitle()
 	} else
 		return s
 }
 
 function render(template_name, data, dst) {
-	var s = template_object(template_name).html()
+	var s = template(template_name)
 	return render_string(s, data, dst)
 }
 
@@ -528,17 +545,17 @@ console.log(url(['a', 'b'], {a: true, b: 1}))
 
 // actions -------------------------------------------------------------------
 
-function underscores(action) {
+function _underscores(action) {
 	return action.replace(/-/g, '_')
 }
 
-action_name = underscores
+_action_name = _underscores
 
-function action_urlname(action) {
+function _action_urlname(action) {
 	return action.replace(/_/g, '-')
 }
 
-function decode_url(path, params) {
+function _decode_url(path, params) {
 	if (typeof path == 'string') {
 		var t = url(path)
 		if (params)
@@ -551,9 +568,9 @@ function decode_url(path, params) {
 }
 
 // extract the action from a decoded url
-function url_action(t) {
+function _url_action(t) {
 	if (t.path[0] == '' && t.path.length >= 2)
-		return action_name(t.path[1])
+		return _action_name(t.path[1])
 }
 
 // given an url (in encoded or decoded form), if it's an action url,
@@ -561,15 +578,15 @@ function url_action(t) {
 // (or current) language if any, or add ?lang= if the given language
 // is not the default language.
 function lang_url(path, params, target_lang) {
-	var t = decode_url(path, params)
+	var t = _decode_url(path, params)
 	var default_lang = config('lang')
 	var target_lang = target_lang || t.params.lang || lang()
-	var action = url_action(t)
+	var action = _url_action(t)
 	if (action === undefined)
 		return url(t)
 	var is_root = t.path[1] == ''
 	if (is_root)
-		action = action_name(config('root_action'))
+		action = _action_name(config('root_action'))
 	var at = config('aliases').to_lang[action]
 	var lang_action = at && at[target_lang]
 	if (lang_action) {
@@ -578,28 +595,28 @@ function lang_url(path, params, target_lang) {
 	} else if (target_lang != default_lang) {
 		t.params.lang = target_lang
 	}
-	t.path[1] = action_urlname(t.path[1])
+	t.path[1] = _action_urlname(t.path[1])
 	return url(t)
 }
 
 var action = {} // {action: handler}
 
-// given a path (in encoded or decoded form), find the action it points to
+// given a path (in encoded form), find the action it points to
 // and return its handler.
 function find_action(path) {
 	var t = url(path)
-	var act = url_action(t)
+	var act = _url_action(t)
 	if (act === undefined)
 		return
 	if (act == '')
 		act = config('root_action')
 	else // an alias or the act name directly
 		act = config('aliases').to_en[act] || act
-	act = action_name(act)
+	act = _action_name(act)
 	var handler = action[act] // find a handler
 	if (!handler) {
 		// no handler, find a static template
-		if (template_object(act).length) {
+		if (template(act) !== undefined) {
 			handler = function() {
 				hide_nav()
 				render(act, null, '#main')
@@ -622,18 +639,25 @@ function hide_nav() {
 }
 
 function check(truth) {
-	if(!truth)
-		window.location = '/'
+	if(!truth) {
+		hide_nav()
+		render(config('not_found_template'), null, '#main')
+	}
 }
 
-function allow(truth) {
-	if(!truth)
-		window.location = '/account'
+var g_loading = true
+
+// check if the action was triggered by a page load or by exec()
+function loading() {
+	return g_loading
 }
 
 $(function() {
 	var History = window.History
-	History.Adapter.bind(window, 'statechange', url_changed)
+	History.Adapter.bind(window, 'statechange', function() {
+		g_loading = false
+		url_changed()
+	})
 })
 
 var g_ignore_url_changed
@@ -661,12 +685,13 @@ function url_changed() {
 	if (handler)
 		handler()
 	else
-		render('not_found', null, '#main')
+		check(false)
 }
 
 function setlink(a, path, params, hook) {
+	if ($(a).data('_hooked'))
+		return
 	var url = lang_url(path, params)
-	$(a).attr('href', url)
 	var handler = find_action(url)
 	if (!(handler || hook)) return
 	$(a).click(function(event) {
@@ -676,7 +701,7 @@ function setlink(a, path, params, hook) {
 			if (hook) hook()
 			if (handler)
 				exec(path, params)
-		})
+		}).data('_hooked', true)
 }
 
 function setlinks(dst) {
@@ -687,6 +712,14 @@ function setlinks(dst) {
 		var url = a.attr('href')
 		setlink(this, url)
 	})
+}
+
+function settitle(title) {
+	title = title
+		|| $('h1').html()
+		|| url(location.pathname).path[1].replace(/[-_]/g, ' ')
+	if (title)
+		document.title = title + config('page_title_suffix')
 }
 
 function slug(id, s) {
@@ -731,22 +764,6 @@ function scroll_top() {
 
 // UI patterns ---------------------------------------------------------------
 
-// TODO: not working on OSX
-function follow_scroll(element_id, margin) {
-	var el = $(element_id)
-	var ey = el.position().top + 46 // TODO: account for margins of parents!
-	var adjust_position = function() {
-		var y = $(this).scrollTop()
-		if (y < ey - margin || window.innerHeight < el.height() + margin) {
-			el.css({position: 'relative', top: ''})
-		} else {
-			el.css({position: 'fixed', top: margin})
-		}
-	}
-	$(window).scroll(adjust_position)
-	$(window).resize(adjust_position)
-}
-
 // find an id attribute in the parents of an element
 function upid(e, attr) {
 	return parseInt($(e).closest('['+attr+']').attr(attr))
@@ -773,4 +790,3 @@ $(function() {
 		$('html, body').stop().animate({ scrollTop: 0, }, 700, 'easeOutQuint')
 	})
 })
-

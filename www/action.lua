@@ -111,6 +111,15 @@ function setlinks(s)
 	return s
 end
 
+--override redirect to automatically translate URLs.
+local webb_redirect = redirect
+function redirect(url, ...)
+	if lang_url then
+		url = lang_url(url)
+	end
+	return webb_redirect(url, ...)
+end
+
 --action files ---------------------------------------------------------------
 
 local file_handlers = {
@@ -127,6 +136,11 @@ local file_handlers = {
 
 local actions_list = glue.keys(file_handlers, true)
 
+local function plain_file_allowed(file)
+	local ext = file:match'%.([^%.]+)$'
+	return not (ext and file_handlers[ext])
+end
+
 local function plain_file_handler(file)
 	out(readfile(file))
 end
@@ -134,8 +148,10 @@ end
 local actionfile = glue.memoize(function(action)
 	local ret_file, ret_handler
 	if readfile[action] or filepath(action) then --action is a plain file
-		ret_file = action
-		ret_handler = plain_file_handler
+		if plain_file_allowed(action) then
+			ret_file = action
+			ret_handler = plain_file_handler
+		end
 	else
 		for i,ext in ipairs(actions_list) do
 			local file = action..'.'..ext
@@ -190,14 +206,18 @@ local mime_type_filters = {
 
 --logic
 
---get the action's normalized name and extension
+--get the action's name with and without extension and the extension
 local function action_ext(action)
 	local ext = action:match'%.([^%.]+)$'
+	local action_no_ext
 	if not ext then --add the default .html extension to the action
+		action_no_ext = action
 		ext = 'html'
 		action = action .. '.' .. ext
+	elseif ext == 'html' then
+		action_no_ext = action:gsub('%.html$', '')
 	end
-	return action, ext
+	return action_no_ext, action, ext
 end
 
 local actions = {} --{action -> handler | s}
@@ -229,14 +249,14 @@ local function pass(arg1, ...)
 	end
 end
 function exec(action_no_ext, ...)
-	local action, ext = action_ext(action_no_ext)
+	local action_no_ext, action, ext = action_ext(action_no_ext)
 	local handler = action_handler(action_no_ext, action)
 	if not handler then return false end
 	return pass(handler(...))
 end
 
 local function action_call(actions, action_no_ext, ...)
-	local action, ext = action_ext(action_no_ext)
+	local action_no_ext, action, ext = action_ext(action_no_ext)
 	local handler = action_handler(action_no_ext, action)
 	local mime = mime_types[ext]
 	if not handler then
@@ -246,10 +266,13 @@ local function action_call(actions, action_no_ext, ...)
 			['image/jpeg'] = config('404_jpeg_action', '404.jpg'),
 		}
 		local nf_action = not_found_actions[mime]
-		if not nf_action or action == nf_action then
-			return false --the 404 action itself was not found
+		if not nf_action
+			or nf_action == action --loop
+			or nf_action == action_no_ext --loop
+		then
+			return false
 		end
-		return action_call(actions, nf_action, action_no_ext, ...)
+		return action_call(actions, nf_action, ...)
 	end
 	if mime then
 		setheader('content_type', mime)
@@ -266,66 +289,16 @@ end
 action = actions
 setmetatable(action, {__call = action_call})
 
---built-in actions & templates -----------------------------------------------
+--built-in actions -----------------------------------------------------------
 
-template.loading = [[
-<div class="loading_outer">
-	<div class="loading_middle">
-		<div class="loading_inner reload loading{{#error}}_error{{/error}}">
-		</div>
-	</div>
-</div>
-]]
-
-template.not_found = [[
-<h1>404 Not Found</h1>
-]]
-
+--return a standard message for missing page actions.
 action['404.html'] = function()
-	check(false, '<h1>File Not Found</h1>')
+	check(false, '<h1>404 Not Found</h1>')
 end
 
+--return a transparent png for missing images to avoid the broken image icon.
 action['404.png'] = function()
 	redirect'/1x1.png'
 end
-
 action['404.jpg'] = action['404.png']
-
-action['config.js'] = function()
-
-	local cjson = require'cjson'
-
-	--initialize some required config values with defaults.
-	config('lang', 'en')
-	config('root_action', 'home')
-	config('templates_action', '__templates')
-
-	local function C(name)
-		if config(name) == nil then return end
-		out('config('
-			..cjson.encode(name)..', '
-			..cjson.encode(config(name))..')\n')
-	end
-
-	C'lang'
-	C'aliases'
-	C'root_action'
-	C'templates_action'
-
-	C'facebook_app_id'
-	C'analytics_ua'
-	C'google_client_id'
-
-end
-
-action['strings.js'] = function(...)
-	if lang() == 'en' then return end
-	action('strings.'..lang()..'.js', ...)
-end
-
-function action.__templates()
-	for _,name in ipairs(template()) do
-		out(mustache_wrap(template(name), name))
-	end
-end
 

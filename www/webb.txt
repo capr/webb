@@ -53,18 +53,21 @@ Reset MySQL root password
 Dependency versions
 
 	OpenResty         1.11.2.4
+
 	resty.mysql       0.13   (included; current is 0.20)
 	resty.random      ?      (included; current is 0.09 and not compatible)
 	resty.session     1.1    (included; current is 2.18)
 	resty.socket      ?      (included; current is 0.0.7)
 
-	jQuery            1.11.1 (included; current is 3.2.1)
-	jquery.validate   1.13.1 (included; current is 1.17.0)
-	jquery.history    ?      (included; current is 1.8b2)
-	jquery.easing     1.3    (included; current is 1.3)
-	mustache.js       0.8.2  (included; current is 2.3.0)
+	jQuery            3.2.1  (included)
+	jquery.validate   1.17.0 (included)
+	jquery.history    1.8b2  (included)
+	jquery.easing     1.3    (included)
+	mustache.js       2.3.0  (included)
 
-	hige.lua
+	normalize.css     7.0.0  (included)
+
+	lustache.lua      1.3.1  (included)
 	lp.lua            1.15   (included; current is ?)
 
 	MySQL             5.7.19
@@ -88,27 +91,35 @@ You should get a 500 error because `main.lua` (our main file) is missing.
 
 main.lua
 
-	require'webb'      -- required, obviously
-	require'action'    -- use the actions system for URL routing
+	require'webbjs'    -- required, obviously
 	require'query'     -- if using mysql
 	require'sendmail'  -- if sending mail
 	require'session'   -- if needing session tracking and/or user accounts
-	require'config'    -- config.lua file, see below
+	require'config'    -- config.lua, see below
 	require'secrets'   -- secrets.lua file, see below
-	pp = require'pp'   -- optional, for debugging
+
+
+	cssfile[[
+		font-awesome.css    --if using font awesome
+		jquery.toasty.css   --if using toasty
+	]]
+
+	jsfile[[
+		jquery.toasty.js    --if using toasty notifications
+		jquery.easing.js    --if using easing transitions
+		jquery.validate.js  --if using client-side validation
+		jquery.unslider.js  --if using unslider
+		analytics.js        --if using analytics
+		facebook.js         --if using facebook authentication
+		google.js           --if using g+ authentication
+		account.js          --if using the standard account widget TODO
+		resetpass.js        --if using the sandard reset password widget TODO
+		config.js           --auto-generated with some values from config.lua
+	]]
 
 	return function()  --called for every URL. make your routing strategy here.
-
-		-- get the split path: for path `/a/b` returns `{'a', 'b'}`
-		local path = args()
-
-		--action-based routing: looks for `a.html.lua`, `a.html.lp`,
-		--`a.html.cat`, `404.html`, `404.html.lua', `404.html.lp`,
-		--`404.html.cat`.
-		var found = action(find_action(unpack(path)))
-
-		--exit with 404 (and no output) if an action was not found
-		check(found)
+		touch_usr() --update usr.atime on all requests, except image requests.
+		check(action(find_action(unpack(args()))))
 	end
 
 
@@ -149,79 +160,6 @@ secrets.lua, not to be added to git
 	config('db_pass',        nil)                   --the mysql password
 
 
-home.html.lua, the homepage action (which also responds to '/')
-
-	local title = 'Home - My Website'
-	local content = [[
-		... the page's html content ...
-	]]
-
-	run('main_template.lua', env{title = title, content = content})
-
-
-main_template.lua, the main template
-
-	local t = {
-		lang = lang(),       --taken from `?lang=` or default
-		title = title,       --taken from env() call above
-		content = content,   --taken from env() call above
-	}
-
-	local template = [[
-	<!DOCTYPE html>
-	<html lang={{lang}}>
-	<head>
-		<meta charset="UTF-8">
-		<meta name="viewport" content="width=device-width, initial-scale=1.0">
-		<title>{{title}}</title>
-		<link rel="stylesheet" type="text/css" href="/all.css">
-		<script src="/all.js"></script>
-	</head>
-	<body>
-		<div id=content_section>
-			{{{content}}}
-		</div>
-	</body>
-	</html>
-	]]
-
-	out(render_string(template, t))
-
-
-all.css.cat, concatenating all css files and serving them as one
-
-	font-awesome.css    --if using font awesome
-	jquery.toasty.css   --if using toasty
-	reset.css           --standard css reset
-	main.css            --your own css
-
-
-all.js.cat, concatenating all js files and serving them as one
-
-	jquery.js           --if using webb.js
-	jquery.history.js   --if using client-side URL routing
-	jquery.toasty.js    --if using toasty notifications
-	jquery.easing.js    --if using easing transitions
-	jquery.validate.js  --if using client-side validation
-	jquery.unslider.js  --if using unslider
-	webb.js             --if using any client-side features
-	analytics.js        --if using analytics
-	facebook.js         --if using facebook authentication
-	google.js           --if using g+ authentication
-	account.js          --if using the standard account widget TODO
-	resetpass.js        --if using the sandard reset password widget TODO
-	config.js           --auto-generated with some values from config.lua
-	main.js             --your own app code
-
-
-main.js, the client-side app code (if any)
-
-
-	analytics_init()    --if using analytics: ping analytics with a page view
-	login()             --if using sessions and user accounts: get a session going
-	url_changed()       --if using client-side actions: execute the current action
-
-
 
 Server-side API
 ------------------------------------------------------------------------------
@@ -233,7 +171,7 @@ TODO
 
 Requires
 
-	glue cjson lfs hige lp socket
+	glue cjson lfs socket
 
 Exports
 
@@ -427,7 +365,8 @@ PUB/SUB
 	listen(topic, func)                       add an event listener
 	unlisten(topic)                           remove event listeners on a topic
 	unlisten_all()                            remove all listeners for .current_action
-	broadcast(topic, data)                    broadcast data to all listeners
+	broadcast_local(topic, data)              broadcast data to this-page listeners
+	broadcast(topic, data)                    broadcast data to listeners from all pages
 
 KEYBOARD NAVIGATION
 
@@ -447,8 +386,6 @@ AJAX REQUESTS
 
 	get(url, success, error, opt) -> id       simple API for ajax GET requests
 	post(url, data, success, error, opt)->id  simple API for ajax POST requests
-
-	load_content(dst, url, success, error, opt)    load content dynamically
 
 TEMPLATING
 

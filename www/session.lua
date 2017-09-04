@@ -430,6 +430,10 @@ function editmode()
 end
 
 function touch_usr()
+	--only touch usr on page requests
+	if args(1):find'%.' and not args(1):find'%.html$' then
+		return
+	end
 	local uid = session_uid()
 	if not uid then return end
 	query([[
