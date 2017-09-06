@@ -194,6 +194,7 @@ end
 --arg validation
 
 function uint_arg(s)
+	if not s or type(s) == 'number' then return s end
 	local n = s and tonumber(s:match'(%d+)$')
 	assert(not n or n >= 0)
 	return n

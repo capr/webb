@@ -406,7 +406,10 @@ function load_partial_(name) {
 function render_string(s, data, dst) {
 	var s = Mustache.render(s, data || {}, load_partial_)
 	if (dst) {
+		var dst_sel = dst
 		dst = $(dst)
+		if (dst.length == 0)
+			console.log('error: render destination not found: '+dst_sel)
 		var id = dst.attr('id')
 		if (id)
 			abort(id)
