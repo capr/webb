@@ -37,11 +37,13 @@ function login(auth, success, error, opt, arg) {
 		if (error)
 			error()
 	}
-	return ajax('/login.json' + (arg || ''), $.extend({
+	opt = $.extend({
+			url: '/login.json' + (arg || ''),
 			success: logged_in,
 			error: login_failed,
 			data: auth,
-		}, opt))
+		}, opt)
+	$(opt.dst || document).ajax(opt)
 }
 
 function logout(success, error, opt) {
@@ -130,7 +132,7 @@ function account_widget(acc) {
 
 	function create_login_section() {
 
-		render('account_login', null, acc.section)
+		$(acc.section).render('account_login')
 
 		$('.fa-eye').click(function() {
 			$('#pass').attr('type',
@@ -227,7 +229,7 @@ function account_widget(acc) {
 	function create_user_section(usr) {
 
 		usr.firstname = firstname(usr.name, usr.email)
-		render('account_info', usr, acc.section)
+		$(acc.section).render('account_info', usr)
 
 		$('#relogin').click(function() {
 			create_login_section()

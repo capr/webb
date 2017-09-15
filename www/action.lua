@@ -1,17 +1,59 @@
---Webb Framework | action-based routing module
---Written by Cosmin Apreutesei. Public Domain.
+--[==[
+
+	webb | action-based routing module
+	Written by Cosmin Apreutesei. Public Domain.
+
+ACTION ALIASES
+
+	lang([s]) -> s                        get/set current language
+	alias(name_en, lang, name)            set an action alias for a language
+	find_action(name, ...) -> name, ...   find action and set language
+	setlinks(s) -> s                      translate URLs based on aliases
+
+ACTIONS
+
+	action(name, args...) -> t|f          execute action (false if not found)
+	exec(name, args...) -> ret...|true    execute action internally
+
+CONFIG
+
+	config('lang', 'en')                  default language
+	config('root_action', 'en')           name of the '/' (root) action
+	config('404_html_action', '404.html') 404 action for text/html
+	config('404_png_action', '404.png')   404 action for image/png
+	config('404_jpeg_action', '404.jpg')  404 action for image/jpeg
+
+	action['404.html']                    basic `404 Not Found` text
+	action['404.png']                     temporary redirect to 1x1.png
+	action['404.jpg']                     temporary redirect to 1x1.png
+
+TODO
+
+	* cascaded actions: html.m.lua, html.m.lp, etc.
+	* .markdown, .coffee, .sass, .less actions
+	* css & js minifying filters
+
+]==]
 
 --action aliases -------------------------------------------------------------
+
+function lang(s)
+	if s then
+		ngx.ctx.lang = s
+	else
+		return ngx.ctx.lang or args'lang' or config('lang', 'en')
+	end
+end
 
 --NOTE: it is assumed that action names are always in english even if they
 --actually request a page in the default language which can configured
 --to be different than english. Action name translation is done
---automatically provided all links go through the lang_url() filter
---and then you use find_action() to find back the action in english
---from unpack(args()), then it's just a matter of declaring aliases
---for actions in different languages. When missing an alias, ?lang=xx
---is appended to the URL automatically and processed accordingly.
---Aliases for the root action are also allowed so as to avoid the ?lang arg.
+--automatically provided that 1) all links are passed through lang_url(),
+--2) routing is done by calling action(find_action(unpack(args()))) instead
+--of action(unpack(args())), and 3) action names are translated in different
+--languages with alias(). Using action aliases is the key to avoiding
+--the appending of ?lang=xx to links. Aliases for the root action ('en')
+--are also allowed in order to avoid the ?lang param.
 
 local aliases = {} --{alias={lang=, action=}}
 local aliases_json = {to_en = {}, to_lang = {}}
@@ -68,7 +110,7 @@ function lang_url(s, target_lang)
 	end
 	local is_root = t[2] == ''
 	if is_root then
-		action = action_name(config('root_action', 'home'))
+		action = action_name(config('root_action', 'en'))
 	end
 	local at = aliases_json.to_lang[action]
 	local lang_action = at and at[target_lang]
@@ -87,7 +129,7 @@ end
 --and change the current language if necessary.
 function find_action(action, ...)
 	if action == '' then --root action in current language
-		action = action_name(config('root_action', 'home'))
+		action = action_name(config('root_action', 'en'))
 	else
 		action = action_name(action)
 		local alias = aliases[action] --look for a regional alias
@@ -185,7 +227,7 @@ local mime_types = {
 
 local function html_filter(handler, action, ...)
 	local s = record(handler, action, ...)
-	local s = setlinks(filter_lang(filter_comments(s)))
+	local s = setlinks(filter_lang(filter_comments(s), lang()))
 	check_etag(s)
 	out(s)
 end

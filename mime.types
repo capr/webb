@@ -10,6 +10,7 @@ types {
     application/javascript                js;
     application/json                      json;
     application/font-woff                 woff;
+    font/woff2                            woff2;
     image/svg+xml                         svg svgz;
     application/pdf                       pdf;
     application/zip                       zip;

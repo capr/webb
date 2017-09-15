@@ -11,7 +11,7 @@ local function try_call(func, ...)
 		local err_obj = ...
 		local err = tostring(err_obj)
 		ngx.log(ngx.ERR, err)
-		if type(err_obj) == 'table' then
+		if type(err_obj) == 'table' and err_obj.type == 'http' then
 			ngx.status = err_obj.http_code
 			err = err_obj.message
 		else

@@ -1,5 +1,13 @@
---Webb Framework | mail sending module
---Written by Cosmin Apreutesei. Public Domain.
+--[==[
+
+	webb framework | mail sending module
+	Written by Cosmin Apreutesei. Public Domain.
+
+MAIL
+
+	sendmail(from, rcpt, subj, msg, html)     send mail via smtp to local server
+
+]==]
 
 require'resty_socket'
 local smtp = require'socket.smtp'

@@ -1,5 +1,62 @@
---Webb Framework | supporting actions and templates for webb.js
---Written by Cosmin Apreutesei. Public Domain.
+--[==[
+
+	webb | webb.js support module
+	Written by Cosmin Apreutesei. Public Domain.
+
+CONFIG
+
+	config('page_title_suffix')         suffix for <title>
+	config('separate_js_refs', false)   separate <script> refs or all.js
+	config('separate_css_refs', false)  separate <link> refs or all.css
+
+API
+
+	cssfile(file)                       add one or more css files to all.css
+	jsfile(file)                        add one or more js files to all.js
+	css(s)                              add css code to inline.css
+	js(s)                               add js code to inline.js
+
+	page_title([title], [body]) -> s    set/infer page title
+
+	webbjs(t)                           webbjs html action
+		t.head: s                        content for <head>
+		t.body: s                        content for <body>
+		t.title: s                       content for <title> (optional)
+		t.client_action: t|f             should run client-side action or not
+
+
+INTERNAL API
+
+	action['config.js']                 expose required config() values
+	action['strings.js']                load strings.<lang>.js
+	action['all.js']                    output of jsfile() calls
+	action['all.css']                   output of cssfile() calls
+	action['inline.js']                 output of js() calls
+	action['inline.css']                output of css() calls
+	action.__templates                  for load_templates()
+
+	config'templates_action'            for load_templates()
+	config'aliases'                     for lang_url() and find_action()
+	config'page_title_suffix'           for pagetitle()
+
+	config'facebook_app_id'             for webb.auth.facebook.js
+	config'google_client_id'            for webb.auth.google.js
+	config'analytics_ua'                for webb.analytics.js
+
+LOADS
+
+	normalize.css
+
+	jquery.js
+	jquery.history.js
+	mustache.js
+	webb.js
+	webb.ajax.js
+	webb.timeago.js
+	webb.util.js
+	webb.analytics.js
+
+]==]
 
 require'webb'
 require'action'
@@ -11,10 +68,7 @@ action['config.js'] = function()
 
 	--initialize some required config values with defaults.
 	config('lang', 'en')
-	config('root_action', 'home')
 	config('templates_action', '__templates')
-	config('loading_template', 'loading')
-	config('not_found_template', 'not_found')
 	config('page_title_suffix', ' - '..host())
 
 	local function C(name)
@@ -28,8 +82,6 @@ action['config.js'] = function()
 	C'aliases'
 	C'root_action'
 	C'templates_action'
-	C'loading_template'
-	C'not_found_template'
 	C'page_title_suffix'
 
 	C'facebook_app_id'
@@ -38,22 +90,17 @@ action['config.js'] = function()
 
 end
 
---return a standard message for missing client-side actions.
-template.not_found = [[
-<h1>Not Found</h1>
-]]
-
---organize string translations in separate files for each langauge
-action['strings.js'] = function()
-	if lang() == 'en' then return end
-	action('strings.'..lang()..'.js')
-end
-
 --make render() work on the client-side
 function action.__templates()
 	for _,name in ipairs(template()) do
 		out(mustache_wrap(template(name), name))
 	end
+end
+
+--organize string translations in separate files for each langauge
+action['strings.js'] = function()
+	if lang() == 'en' then return end
+	action('strings.'..lang()..'.js')
 end
 
 --simple API to add js and css snippets and files from server-side code
@@ -97,44 +144,18 @@ inline.css         // result of css() calls
 
 jsfile[[
 jquery.js
-jquery.history.js  // for URL rewriting
-mustache.js
+jquery.history.js  // for exec() and ^url_changed
+mustache.js        // for render()
+
 webb.js
-config.js          // config values needed by webb.js
-strings.js         // translated strings for current language
-analytics.js
+webb.ajax.js
+webb.timeago.js
+webb.util.js
+webb.analytics.js
+
+config.js          // dynamic config
+strings.js         // strings in current language
 inline.js          // result of js() calls
-]]
-
---loading template for slow-to-load page sections.
-
-template.loading = [[
-{{#error}}
-	<div class="reload loading_error" title="{{error}}">
-{{/error}}
-{{^error}}
-	<div class="loading">
-{{/error}}
-]]
-
-css[[
-/* ajax requests with user visual feedback and manual retry */
-
-.loading {
-	background-image: url(/loading.gif);
-	background-repeat: no-repeat;
-	width: 16px;
-	height: 16px;
-	cursor: pointer;
-}
-
-.loading_error {
-	background-image: url(/load_error.gif);
-	background-repeat: no-repeat;
-	width: 32px;
-	height: 32px;
-	cursor: pointer;
-}
 ]]
 
 --format js and css refs as separate refs or as a single ref based on a .cat action
@@ -169,7 +190,7 @@ end
 
 --main template gluing it all together
 
-template.webbjs = [[
+local webbjs_template = [[
 <!DOCTYPE html>
 <html lang="{{lang}}">
 <head>
@@ -182,7 +203,7 @@ template.webbjs = [[
 		analytics_init()
 		$(function() {
 			load_templates(function() {
-				setlinks()
+				$(document).setup()
 				{{#client_action}}
 					url_changed()
 				{{/client_action}}
@@ -206,12 +227,12 @@ end
 function webbjs(p)
 	local t = {}
 	t.lang = lang()
-	t.title = page_title(p.title, p.body)
-	t.title_suffix = config('page_title_suffix', ' - '..host())
-	t.body = p.body
+	t.body = filter_lang(p.body, lang())
 	t.head = p.head
+	t.title = page_title(p.title, t.body)
+	t.title_suffix = config('page_title_suffix', ' - '..host())
 	t.client_action = p.client_action
 	t.all_js = jslist('all.js', config('separate_js_refs', false))
 	t.all_css = csslist('all.css', config('separate_css_refs', false))
-	out(render('webbjs', t))
+	out(render_string(webbjs_template, t))
 end

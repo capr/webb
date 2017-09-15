@@ -60,18 +60,24 @@ Dependency versions
 	resty.socket      ?      (included; current is 0.0.7)
 
 	jQuery            3.2.1  (included)
-	jquery.validate   1.17.0 (included)
 	jquery.history    1.8b2  (included)
-	jquery.easing     1.3    (included)
 	mustache.js       2.3.0  (included)
-
-	normalize.css     7.0.0  (included)
 
 	lustache.lua      1.3.1  (included)
 	lp.lua            1.15   (included; current is ?)
 
 	MySQL             5.7.19
 	PHP               7.0.22 (only for adminer.php)
+
+Extra modules
+
+	jquery.validate   1.17.0 (included)
+	jquery.easing     1.3    (included)
+	content-tools		1.5.4  (included)
+
+	normalize.css     7.0.0  (included)
+
+	adminer.php       4.3.1  (included)
 
 HowTO
 ------------------------------------------------------------------------------
@@ -160,391 +166,22 @@ secrets.lua, not to be added to git
 	config('db_pass',        nil)                   --the mysql password
 
 
-
-Server-side API
+Modules
 ------------------------------------------------------------------------------
 
-TODO
+webb.lua                       main module
+action.lua                     routing module
+query.lua                      mysql query module
+ddl.lua                        ddl macros
+session.lua                    session and authentication module
+sendmail.lua                   sending emails
+webbjs.lua                     webb.js support module
+
+webb.js                        client-side main module
+webb.ajax.js                   ajax module
+
+webb.timeago.js                time formatting
+webb.util.js                   misc.
+webb.back-to-top.js            back-to-top button
+webb.content-tools.js          contenteditable library
 
-	* markdown preprocessor
-	* cascaded actions: html.m.lua, html.m.lp, etc.
-
-Requires
-
-	glue cjson lfs socket
-
-Exports
-
-	glue
-
-CONFIG
-
-	config(name[, default_val]) -> val        get/set config value
-	S(name[, default_val])                    get/set internationalized string
-
-ENVIRONMENT
-
-	once(f[, clear_cache[, k]])               memoize function for current request
-	env([t]) -> t                             per-request shared environment
-
-REQUEST
-
-	headers() -> t                            get all headers
-	headers(name) -> s                        get a specific header
-	method() -> s                             get the http method
-	method(which) -> t|f                      check the http method
-	post() -> t | nil                         get all POST args
-	post(name) -> s | nil                     get a POST arg
-	args() -> t                               return path elements and query args
-	args(n) -> s | nil                        return the n'th path element
-	args(name) -> s | nil                     return query arg
-	scheme([s]) -> s | t|f                    get/check request scheme
-	host([s]) -> s | t|f                      get/check request host
-	port([p]) -> p | t|f                      get/check server port
-	email(user) -> s                          get email address of user
-	client_ip() -> s                          get client's ip address
-	lang([s]) -> s                            get/set current language
-
-ARG PARSING
-
-	uint_arg(s) -> n | nil                    validate unsigned integer arg
-	str_arg(s) -> s | nil                     validate/trim non-empty string arg
-	enum_arg(s, values...) -> s | nil         validate enum arg
-	list_arg(s[, arg_f]) -> t                 validate comma-separated list arg
-	id_arg(s) -> n                            decode n-s and return n
-	id_arg(n, s) -> s                         encode n and s as n-s
-
-OUTPUT
-
-	out(s)                                    output a string
-	push_out([f])                             push output function or buffer
-	pop_out() -> s                            pop output function and flush it
-	stringbuffer([t]) -> f(s)/f()->s          create a string buffer
-	record(f) -> s                            run f and collect out() calls
-	out_buffering() -> t | f                  check if we're buffering output
-	setheader(name, val)                      set a header if not buffering
-	print(...)                                like Lua's print but uses out()
-	html(s) -> s                              escape html
-	url([path], [params]) -> t | s            encode/decode/update url
-	absurl([path]) -> s                       get the absolute url for a path
-
-RESPONSE
-
-	redirect(url[, status])                   exit with "302 moved temporarily"
-	check(ret[, err]) -> ret                  exit with "404 file not found"
-	allow(ret[, err]) -> ret                  exit with "403 forbidden"
-	check_etag(s)                             exit with "304 not modified"
-
-JSON
-
-	json(s) -> t                              decode json
-	json(t) -> s                              encode json
-
-FILESYSTEM
-
-	basepath([file]) -> path                  get filesystem path (unchecked)
-	filepath(file) -> path                    get filesystem path if file exists
-	readfile(file) -> s                       get file contents
-	readfile.filename = s|handler(filename)   set virtual file contents
-
-MUSTACHE TEMPLATES
-
-	render_string(s[, env]) -> s              render a template from a string
-	render_file(file[, env]) -> s             render a template from a file
-	template(name) -> s                       get a template contents
-	template.name = contents | handler(name)  set a template contents or handler
-	render(name[, env]) -> s                  render a template
-
-LUAPAGES TEMPLATES
-
-	include_string(s, [env], [name], ...)     run LuaPages script
-	include(file, [env], ...)                 run LuaPages script
-
-LUA SCRIPTS
-
-	run_string(s, [env], args...) -> ret      run Lua script
-	run(file, [env], args...) -> ret          run Lua script
-
-HTML FILTERS
-
-	filter_lang(s) -> s                       filter <t> tags and :lang attrs
-	filter_comments(s) -> s                   filter <!-- --> comments
-	lang_url(t|s) -> s                        return a language-specific URL
-
-
-CATLISTS
-
-	catlist(file, args...)                    output a .cat file
-
-ACTION ALIASES
-
-	alias(action_en, lang, action)            set an action alias for a language
-	find_action(action, ...) -> action, ...   find action and set language
-	setlinks(s) -> s                          translate URLs based on aliases
-
-ACTIONS
-
-	action(name, args...) -> t | f            execute action (false if not found)
-	exec(name, args...) -> ret... | t         execute action without filtering
-
-QUERY
-
-	quote(s) -> s                             quote sql string
-	print_queries([t|f]) -> t|f               control printing of queries
-	query(s, args...) -> res                  query and return result table
-	query1(s, args...) -> t                   query and return first row
-	iquery(s, args...) -> id                  query and return insert id
-	changed(res) -> t|f                       check if any rows were updated
-	atomic(func)                              execute func in transaction
-	groupby(res, col) -> t                    group rows by a column
-
-
-QUERY/DDL
-
-	qsubst(typedef)                           create a substitution definition
-	qmacro.<name> = f(args...)                create a macro definition
-
-	nodrop([t|f]) -> t|f                      control effect
-	dropfk(name)                              drop foreign key
-	droptable(name)                           drop table
-	fk(tbl, col, ...)                         create a foreign key
-
-MAIL
-
-	sendmail(from, rcpt, subj, msg, html)     send mail via smtp to local server
-
-SESSIONS
-
-	session_uid() -> uid
-	authenticate(auth) -> uid
-	set_pass(pass)                            set password for current user
-	send_auth_token(email)
-
-	login([auth][, switch_user]) -> uid       login
-	uid() -> uid                              get current user id
-	uid(field) -> v                           get current user id
-	logout() -> uid                           logout, and get an anonymous uid
-	admin() -> t|f
-	editmode() -> t|f
-
-	touch_usr()                               update user's atime
-
-
-
-Client-side API
-------------------------------------------------------------------------------
-
-CONFIG
-
-	S(name, val)                              for internationalized strings
-	C(name, val)                              for global config options
-
-	lang()                                    current language from ?lang= or default
-
-STRING FORMATTING
-
-	s.format(args...) -> s                    '{0} ... {1}' formatting
-	s.trim() -> s                             trim string spaces
-
-	firstname([fullname], [email]) ->s        get name from full name or email
-
-TIME FORMATTING
-
-	rel_time(s) -> s
-	timeago(timestamp) -> s
-	parse_date(s) -> d
-	format_time(d) -> s
-	is_today(d) -> t|f
-	shortdate(d, showtime) -> s
-	longdate(d, showtime) -> s
-	from_date(d) -> s
-	update_timeago()                          update all .timeago elements
-
-PUB/SUB
-
-	listen(topic, func)                       add an event listener
-	unlisten(topic)                           remove event listeners on a topic
-	unlisten_all()                            remove all listeners for .current_action
-	broadcast_local(topic, data)              broadcast data to this-page listeners
-	broadcast(topic, data)                    broadcast data to listeners from all pages
-
-KEYBOARD NAVIGATION
-
-	bind_keydown(id, func)                    add a keydown handler
-	unbind_keydown_all()                      remove all keydown handlers
-
-PERSISTENCE
-
-	store(key, value)                         store a value in the local store
-	getback(key) -> value                     get back the stored value
-
-AJAX REQUESTS
-
-	ajax(url, opt) -> id                      start an ajax request
-	abort(id)                                 abort an ajax request
-	abort_all()                               abort all ajax requests
-
-	get(url, success, error, opt) -> id       simple API for ajax GET requests
-	post(url, data, success, error, opt)->id  simple API for ajax POST requests
-
-TEMPLATING
-
-	render(template_name, data[, dst]) -> [s] render a template to an element
-	render_multi_column(template_name, items, col_count)  multi-column templates
-	select_map(a, selv)                       generate data to generate <select> elements
-
-ADDRESS BAR, LINKS, SCROLLING
-
-	hide_nav()
-	check(truth)
-	allow(truth)
-	full_url(path, params)
-	set_state_top(top)
-	exec(url, params)
-	action = {} // {action: handler}
-	parse_url(url)
-	url_changed()
-	setlink(a, url, params, hook)
-	setlinks(dst)
-	slug(id, s)
-	intarg(s)
-	optarg(s)
-	back()
-	setscroll()
-	scroll_top()
-
-UI PATTERNS
-
-	follow_scroll(element_id, margin)
-
-	upid(e, attr)
-
-	notify(msg, cls)
-
-	.back-to-top
-
-
-Server-side API
-------------------------------------------------------------------------------
-
-CONFIG
-
-	config(name[, default_val]) -> val
-
-Get/set config value.
-
-	S(name[, default_val])
-
-Get/set internationalized string.
-
-
-ENVIRONMENT
-
-	once(f[, clear_cache[, k]])
-
-Memoize 0-arg or 1-arg function for current request. If clear_cache is
-true, then clear the cache (either for the entire function or for arg `k`).
-
-	env([t]) -> t
-
-Per-request shared environment. Scripts run with `render()`,
-`include()`, `run()` run in this environment by default. If the `t` argument
-is given, an inherited environment is created.
-
-
-SESSIONS
-
-	login([auth][, switch_user]) -> uid | nil[, err]
-
-Login using one of the supported authentication methods:
-
-	{type = 'session'}
-
-login using session cookie (default). if there's no session cookie
-or it's invalid, an anonymous user is created.
-
-	{type = 'anonymous'}
-
-login using session cookie but logout and create an anonymous user
-if the logged in user is not anonymous.
-
-	{type = 'pass', action = 'login', email = , pass = }
-
-login to an existing user using its email and password. returns
-`nil, 'user_pass'` if the email or password is wrong.
-
-	{type = 'pass', action = 'create', email = , pass = }
-
-create a user and login to it. returns `nil, 'email_taken'` if the email is
-already taken. the admin flag is set for the first non-anonymous user to be
-created.
-
-	{type = 'nopass', email = }
-
-login using only user.
-
-	{type = 'update', email = , name = ', phone = }
-
-update the info of the currently logged in user. an attempt to change the
-email to the email of a different user results in `nil, 'email_taken'`.
-
-	{type = 'token', token = }
-
-login using a temporary token that was generated by the remember password
-form. a token can be used only once. returns `nil, 'invalid_token'` if the
-token was not found or expired.
-
-	{type = 'facebook', access_token = }
-
-login using facebook authentication. user's fields `email`, `facebookid`,
-`name`, and `gender` are also updated.
-
-	{type = 'google', access_token = }
-
-login using google+ authentication. user's fields `email`, `googleid`,
-`gimgurl` and `name` are also updated.
-
-NOTE: Regardless of how the user is authenticated, the session cookie is
-updated and it will be sent with the reply. If there was already a user
-logged in before and it was a different user, the callback
-`switch_user(new_uid, old_uid)` is called. If that previous user was
-anonymous then that user is also deleted.
-
-	uid() -> uid
-
-Get the current user id. Same as calling `login()` without args but
-caches the uid so it can be called multiple times without actually
-performing the login.
-
-	uid(field) -> v
-
-Get the value of a a specific field from the user info.
-
-	uid'*' -> t
-
-Get full user info.
-
-	logout() -> uid
-
-Clears the session cookie and creates an anonymous user and returns it.
-
-	admin() -> t|f
-
-Returns true if the user has the admin flag.
-
-	editmode() -> t|f
-
-Same as `admin()`. Override to add more logic to it.
-
-	touch_usr()
-
-Update user's access time. Call it on every request as a way of tracking
-user activity, eg. for knowing when to send those annoying "forgot items
-in your cart" emails.
-
-
-
-Client-side API
-------------------------------------------------------------------------------
-
-TODO

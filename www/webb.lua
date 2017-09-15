@@ -1,5 +1,135 @@
---Webb Framework | main module
---Written by Cosmin Apreutesei. Public Domain.
+--[==[
+
+	webb | main module
+	Written by Cosmin Apreutesei. Public Domain.
+
+Exports
+
+	glue
+
+CONFIG
+
+	config'webb_dir'                        www dir (set by nginx wrapper)
+	config'base_url'                        optional, for absurl()
+
+CONFIG API
+
+	config(name[, default_val]) -> val      get/set config value
+	S(name[, default_val])                  get/set internationalized string
+
+ENVIRONMENT
+
+	once(f[, clear_cache[, k]])             memoize for current request
+	env([t]) -> t                           per-request shared environment
+
+REQUEST
+
+	headers([name]) -> s|t                  get header or all
+	method([method]) -> s|b                 get/check http method
+	post([name]) -> s | t | nil             get POST arg or all
+	args([n|name]) -> s | t | nil           get path element or GET arg or all
+	scheme([s]) -> s | t|f                  get/check request scheme
+	host([s]) -> s | t|f                    get/check request host
+	port([p]) -> p | t|f                    get/check server port
+	email(user) -> s                        get email address of user
+	client_ip() -> s                        get client's ip address
+
+ARG PARSING
+
+	id_arg(s) -> n | nil                    validate int arg with slug
+	str_arg(s) -> s | nil                   validate/trim non-empty string arg
+	enum_arg(s, values...) -> s | nil       validate enum arg
+	list_arg(s[, arg_f]) -> t               validate comma-separated list arg
+
+OUTPUT
+
+	out(s)                                  output a string
+	push_out([f])                           push output function or buffer
+	pop_out() -> s                          pop output function and flush it
+	stringbuffer([t]) -> f(s)/f()->s        create a string buffer
+	record(f) -> s                          run f and collect out() calls
+	out_buffering() -> t | f                check if we're buffering output
+	setheader(name, val)                    set a header (unless we buffering)
+	print(...)                              like Lua's print but uses out()
+
+HTML ENCODING
+
+	html(s) -> s                            escape html
+
+URL ENCODING & DECODING
+
+	url([path], [params]) -> t | s          encode/decode/update url
+	absurl([path]) -> s                     get the absolute url for a path
+	slug(id, s) -> s                        encode id and s to `s-id`
+
+RESPONSE
+
+	http_error(code[, msg])                 raise a http error
+	redirect(url[, status])                 exit with "302 moved temporarily"
+	check(ret[, err]) -> ret                exit with "404 file not found"
+	allow(ret[, err]) -> ret                exit with "403 forbidden"
+	check_etag(s)                           exit with "304 not modified"
+
+JSON ENCODING/DECODING
+
+	json(s) -> t                            decode json
+	json(t) -> s                            encode json
+
+FILESYSTEM
+
+	basepath([file]) -> path                get filesystem path (unchecked)
+	filepath(file) -> path                  get filesystem path (must exist)
+	readfile(file) -> s                     get file contents
+	readfile.filename <- s|f(filename)      set virtual file contents
+
+MUSTACHE TEMPLATES
+
+	render_string(s[, env]) -> s            render a template from a string
+	render_file(file[, env]) -> s           render a template from a file
+	mustache_wrap(s) -> s                   wrap a template in <script> tag
+	template(name) -> s                     get template contents
+	template.name <- s|f(name)              set template contents or handler
+	render(name[, env]) -> s                render template
+
+LUAPAGES TEMPLATES
+
+	include_string(s, [env], [name], ...)   run LuaPages script
+	include(file, [env], ...)               run LuaPages script
+
+LUA SCRIPTS
+
+	run_string(s, [env], args...) -> ret    run Lua script
+	run(file, [env], args...) -> ret        run Lua script
+
+HTML FILTERS
+
+	filter_lang(s, lang) -> s               filter <t> tags and :lang attrs
+	filter_comments(s) -> s                 filter <!-- --> comments
+
+FILE CONCATENATION LISTS
+
+	catlist(file, args...)                  output a .cat file
+
+TODO
+
+	* more preprocessors: markdown, coffeescript, sass, minimifiers
+	* css & js minifiers
+
+API DOCS
+
+	once(f[, clear_cache[, k]])
+
+Memoize 0-arg or 1-arg function for current request. If clear_cache is
+true, then clear the cache (either for the entire function or for arg `k`).
+
+	env([t]) -> t
+
+Per-request shared environment. Scripts run with `render()`,
+`include()`, `run()` run in this environment by default. If the `t` argument
+is given, an inherited environment is created.
+
+
+]==]
 
 glue = require'glue'
 
@@ -134,7 +264,14 @@ end
 local _post_args = once(function()
 	if not method'post' then return end
 	ngx.req.read_body()
-	return ngx.req.get_post_args()
+	local ct = headers'Content-Type'
+	if ct:find'^application/x-www-form-urlencoded' then
+		return ngx.req.get_post_args()
+	elseif ct:find'^application/json' then
+		return json(ngx.req.get_body_data())
+	else
+		return ngx.req.get_body_data()
+	end
 end)
 
 function post(v)
@@ -167,14 +304,6 @@ function port(p)
 	return tonumber(headers'X-Forwarded-Port' or ngx.var.server_port)
 end
 
-function absurl(path)
-	path = path or ''
-	return config'base_url' or
-		scheme()..'://'..host()..
-			(((scheme'https' and port(443)) or
-			  (scheme'http' and port(80))) and '' or ':'..port())..path
-end
-
 function email(user)
 	return string.format('%s@%s', assert(user), host())
 end
@@ -183,21 +312,12 @@ function client_ip()
 	return ngx.var.remote_addr
 end
 
-function lang(s)
-	if s then
-		ngx.ctx.lang = s
-	else
-		return ngx.ctx.lang or args'lang' or config('lang', 'en')
-	end
-end
-
 --arg validation
 
-function uint_arg(s)
+function id_arg(s)
 	if not s or type(s) == 'number' then return s end
-	local n = s and tonumber(s:match'(%d+)$')
-	assert(not n or n >= 0)
-	return n
+	local n = tonumber(s:match'(%d+)$') --strip any slug
+	return n and n >= 0 and n or nil
 end
 
 function str_arg(s)
@@ -223,17 +343,6 @@ function list_arg(s, arg_f)
 		table.insert(t, arg_f(s))
 	end
 	return t
-end
-
-function id_arg(id, s)
-	if not id then return nil end
-	if type(id) == 'string' then --decode
-		return tonumber((id:gsub('%-.*$', '')))
-	else --encode
-		s = s or ''
-		--TODO: strip all non-url chars!
-		return tostring(id)..'-'..s:gsub('[ ]', '-'):lower()
-	end
 end
 
 --output API -----------------------------------------------------------------
@@ -288,6 +397,28 @@ function record(out_content, ...)
 	return pass(out_content(...))
 end
 
+function setheader(name, val)
+	if out_buffering() then
+		return
+	end
+	ngx.header[name] = val
+end
+
+function print(...)
+	local out = default_outfunc
+	ngx.header.content_type = 'text/plain'
+	local n = select('#', ...)
+	for i=1,n do
+		out(tostring((select(i, ...))))
+		if i < n then
+			out'\t'
+		end
+	end
+	out'\n'
+end
+
+--html encoding --------------------------------------------------------------
+
 function html(s)
 	if s == nil then return '' end
 	return tostring(s):gsub('[&"<>\\]', function(c)
@@ -299,6 +430,8 @@ function html(s)
 		else return c end
 	end)
 end
+
+--url encoding/decoding ------------------------------------------------------
 
 local function url_path(path)
 	if type(path) == 'table' then --encode
@@ -382,30 +515,28 @@ ngx.say(url(nil, {a=true, b=1}))
 ngx.say()
 ]]
 
-function setheader(name, val)
-	if out_buffering() then
-		return
-	end
-	ngx.header[name] = val
+function absurl(path)
+	path = path or ''
+	return config'base_url' or
+		scheme()..'://'..host()..
+			(((scheme'https' and port(443)) or
+			  (scheme'http' and port(80))) and '' or ':'..port())..path
 end
 
-function print(...)
-	local out = default_outfunc
-	ngx.header.content_type = 'text/plain'
-	local n = select('#', ...)
-	for i=1,n do
-		out(tostring((select(i, ...))))
-		if i < n then
-			out'\t'
-		end
-	end
-	out'\n'
+function slug(id, s)
+	s = glue.trim(s or '')
+		:gsub('[%s_;:=&@/%?]', '-') --turn separators into dashes
+		:gsub('%-+', '-')           --compress dashes
+		:gsub('[^%w%-%.,~]', '')    --strip chars that would be url-encoded
+		:lower()
+	assert(id >= 0)
+	return (s ~= '' and s..'-' or '')..tostring(id)
 end
 
 --response API ---------------------------------------------------------------
 
-local function http_error(code, msg)
-	local t = {http_code = code, message = msg}
+function http_error(code, msg)
+	local t = {type = 'http', http_code = code, message = msg}
 	function t:__tostring()
 		return tostring(code)..(msg ~= nil and ' '..tostring(msg) or '')
 	end
@@ -423,22 +554,6 @@ end
 function allow(ret, err)
 	if ret then return ret, err end
 	http_error(403, err)
-end
-
-function push_out_etag()
-	if not headers'if_none_match' then return end
-	push_out()
-end
-
-function pop_out_etag()
-	local etag0 = headers'if_none_match'
-	if not etag0 then return end
-	local s = pop_out()
-	local etag = ngx.md5(s)
-	if etag0 == etag then
-		http_error(304)
-	end
-	out(s)
 end
 
 function check_etag(s)
@@ -459,11 +574,22 @@ end
 local cjson = require'cjson'
 cjson.encode_sparse_array(false, 0, 0) --encode all sparse arrays
 
+local function remove_nulls(t)
+	if t == cjson.null then
+		return nil
+	elseif type(t) == 'table' then
+		for k,v in pairs(t) do
+			t[k] = remove_nulls(v)
+		end
+	end
+	return t
+end
+
 function json(v)
 	if type(v) == 'table' then
 		return cjson.encode(v)
 	elseif type(v) == 'string' then
-		return cjson.decode(v)
+		return remove_nulls(cjson.decode(v))
 	else
 		error('invalid arg '..type(v))
 	end
@@ -499,10 +625,7 @@ end
 readfile = {} --{filename -> content | handler(filename)}
 setmetatable(readfile, {__call = readfile_call})
 
---TODO: outfile(file) which skips the accumulation/concat
---so it can work with very large files
-
---mustache templates ---------------------------------------------------------
+--mustache html templates ----------------------------------------------------
 
 local function underscores(name)
 	return name:gsub('-', '_')
@@ -523,13 +646,13 @@ function mustache_wrap(s, name)
 		'_template">\n'..s..'\n</script>\n'
 end
 
-function check_template(name, file)
+local function check_template(name, file)
 	glue.assert(not template[name], 'duplicate template "%s" in %s', name, file)
 end
 
 --TODO: make this parser more robust so we can have <script> tags in templates
 --without the <{{undefined}}/script> hack (mustache also needs it though).
-function mustache_unwrap(s, t, file)
+local function mustache_unwrap(s, t, file)
 	t = t or {}
 	local i = 0
 	for name,s in s:gmatch('<script%s+type=?"text/x%-mustache?"%s+'..
@@ -556,7 +679,7 @@ end
 local load_templates = glue.memoize(function()
 	local t = {}
 	for file in lfs.dir(basepath()) do
-		if file:find'%.mu$' and
+		if file:find'%.html%.mu$' and
 			lfs.attributes(basepath(file), 'mode') == 'file'
 		then
 			t[#t+1] = file
@@ -567,7 +690,7 @@ local load_templates = glue.memoize(function()
 		local s = readfile(file)
 		local _, i = mustache_unwrap(s, template, file)
 		if i == 0 then --must be without the <script> tag
-			local name = file:gsub('%.mu$', '')
+			local name = file:gsub('%.html%.mu$', '')
 			name = underscores(name)
 			check_template(name, file)
 			template[name] = s
@@ -585,7 +708,7 @@ local function template_call(template, name)
 		if type(s) == 'function' then
 			s = s()
 		end
-		return filter_lang(filter_comments(s))
+		return s
 	end
 end
 
@@ -651,8 +774,8 @@ end
 
 --html filters ---------------------------------------------------------------
 
-function filter_lang(s, lang_)
-	local lang0 = lang_ or lang()
+function filter_lang(s, lang)
+	local lang0 = lang
 
 	--replace <t class=lang>
 	s = s:gsub('<t class=([^>]+)>(.-)</t>', function(lang, html)

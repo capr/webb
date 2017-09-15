@@ -1,5 +1,30 @@
---Webb Framework | mysql query module
---Written by Cosmin Apreutesei. Public Domain.
+--[==[
+
+	webb | mysql query module
+	Written by Cosmin Apreutesei. Public Domain.
+
+QUERY
+
+	quote(s) -> s                             quote sql string
+	print_queries([t|f]) -> t|f               control printing of queries
+	query(s, args...) -> res                  query and return result table
+	query1(s, args...) -> t                   query and return first row
+	iquery(s, args...) -> id                  query and return insert id
+	changed(res) -> t|f                       check if any rows were updated
+	atomic(func)                              execute func in transaction
+	groupby(res, col) -> t                    group rows by a column
+
+QUERY/DDL
+
+	qsubst(typedef)                           create a substitution definition
+	qmacro.<name> = f(args...)                create a macro definition
+
+	nodrop([t|f]) -> t|f                      control effect
+	dropfk(name)                              drop foreign key
+	droptable(name)                           drop table
+	fk(tbl, col, ...)                         create a foreign key
+
+]==]
 
 local mysql = require'resty_mysql'
 
