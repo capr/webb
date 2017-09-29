@@ -25,11 +25,11 @@ UI PATTERNS
 // 'firstname lastname' -> 'firstname'; 'email@domain' -> 'email'
 function firstname(name, email) {
 	if (name) {
-		name = $.trim(name)
+		name = name.trim()
 		var a = name.split(' ', 1)
 		return a.length > 0 ? a[0] : name
 	} else if (email) {
-		email = $.trim(email)
+		email = email.trim()
 		var a = email.split('@', 1)
 		return a.length > 0 ? a[0] : email
 	} else {

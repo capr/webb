@@ -220,8 +220,10 @@ local webbjs_template = [[
 
 function page_title(title, body)
 	return title
-		or (body and body:match'<h1[^>]*>(.-)</h1>') --infer it from the top heading
-		or args(1):gsub('[-_]', ' ') --infer it from the name of the action
+		--infer it from the top heading
+		or (body and body:match'<h1[^>]*>(.-)</h1>')
+		--infer it from the name of the action
+		or args(1):gsub('[-_]', ' ')
 end
 
 function webbjs(p)

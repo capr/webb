@@ -6,6 +6,7 @@
 GLUE
 
 	assert(arg, msg) -> arg
+	s.trim(s)
 	s.format(args...) -> s                    '{0} ... {1}' formatting
 
 CONFIG API
@@ -79,10 +80,13 @@ function assert(arg, msg) {
 		return arg
 }
 
+String.prototype.trim = String.prototype.trim || $.trim
+
 // usage:
 //		'{1} of {0}'.format(total, current)
 //		'{1} of {0}'.format([total, current])
 //		'{current} of {total}'.format({'current': current, 'total': total})
+assert(!String.prototype.format)
 String.prototype.format = function() {
 	var s = this.toString()
 	if (!arguments.length)
@@ -307,7 +311,7 @@ function find_action(path) {
 
 function check(truth) {
 	if(!truth) {
-		$([window, document]).trigger('action_not_found')
+		$(document).trigger('action_not_found')
 	}
 }
 
@@ -330,17 +334,17 @@ var g_ignore_url_changed
 
 function url_changed() {
 	if (g_ignore_url_changed) return
-	$(window).trigger('url_changed')
+	$(document).trigger('url_changed')
 	var handler = find_action(location.pathname)
 	if (handler)
 		handler()
 	else
 		check(false)
-	$(window).trigger('url_changed_done')
+	$(document).trigger('after_exec')
 }
 
-$(window).on('url_changed', function() {
-	$(window, document).off('.current_action')
+$(document).on('url_changed', function() {
+	$(document).off('.current_action')
 	unlisten('.current_action')
 })
 
@@ -351,16 +355,37 @@ function _save_scroll_state(top) {
 	g_ignore_url_changed = false
 }
 
-function exec(path, params) {
-	// store current scroll top in current state first
-	_save_scroll_state($(window).scrollTop())
-	// push new state without data
-	History.pushState(null, null, lang_url(path, params))
-}
+var exec, back
+(function() {
 
-function back() {
-	History.back()
-}
+	var aborted
+
+	function abort_exec() {
+		aborted = true
+	}
+
+	function check_exec() {
+		aborted = false
+		$(document).trigger('before_exec', [abort_exec])
+		return !aborted
+	}
+
+	exec = function(path, params) {
+		if (!check_exec())
+			return
+		// store current scroll top in current state first
+		_save_scroll_state($(window).scrollTop())
+		// push new state without data
+		History.pushState(null, null, lang_url(path, params))
+	}
+
+	back = function() {
+		if (!check_exec())
+			return
+		History.back()
+	}
+
+})()
 
 // set scroll back to where it was or reset it
 function setscroll(top) {
@@ -508,6 +533,41 @@ function broadcast(topic, data) {
 	broadcast_local(topic, data)
 	broadcast_external(topic, data)
 }
+
+// trickled-down events ------------------------------------------------------
+
+(function() {
+
+	var registered = {}
+
+	function capture(etype, handler) {
+		var attr = 'capture-'+etype
+		$(this).on(etype, handler).attr(attr, true)
+		if (!registered[etype]) {
+			$([window, document]).on(etype, function(e) {
+				var args = $.makeArray(arguments)
+				args.shift()
+				var ret
+				$(e.target).find('['+attr+']').each(function() {
+					ret = $(this).triggerHandler(e, args)
+				})
+				return ret
+			})
+			registered[etype] = true
+		}
+	}
+
+	$.fn.capture = function(etypes, handler) {
+		etypes = etypes.trim().split(' ')
+		for(var i = 0; i < etypes.length; i++) {
+			var etype = etypes[i].trim()
+			if (etype)
+				capture.call(this, etype, handler)
+		}
+		return this
+	}
+
+})()
 
 // persistence ---------------------------------------------------------------
 
