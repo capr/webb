@@ -1,6 +1,6 @@
 --[==[
 
-	webb | cookie/db-based session module
+	webb | cookie/db-based session & authentication module
 	Written by Cosmin Apreutesei. Public Domain.
 
 SESSIONS
@@ -27,6 +27,7 @@ CONFIG
 	template.reset_pass_email                 template for send_auth_token()
 
 	action['session_instal.txt']              (re)create usr & session tables
+	action['login.json']                      login() server-side
 
 API DOCS
 
@@ -603,4 +604,15 @@ action['session_install.txt'] = function()
 	);
 	]]
 
+end
+
+action['login.json'] = function(...)
+	if ... == 'logout' then
+		allow(logout())
+	else
+		local auth = post()
+		allow(login(auth))
+	end
+
+	return uid'*'
 end
