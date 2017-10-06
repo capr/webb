@@ -119,12 +119,12 @@ end
 
 cssfile = sepbuffer'\n'
 readfile['all.css.cat'] = function()
-	return cssfile()
+	return cssfile() .. ' inline.css' --append inline code at the end
 end
 
 jsfile = sepbuffer'\n'
 readfile['all.js.cat'] = function()
-	return jsfile()
+	return jsfile() .. ' inline.js' --append inline code at the end
 end
 
 css = sepbuffer'\n'
@@ -139,7 +139,6 @@ end
 
 cssfile[[
 normalize.css
-inline.css         // result of css() calls
 ]]
 
 jsfile[[
@@ -155,23 +154,16 @@ webb.analytics.js
 
 config.js          // dynamic config
 strings.js         // strings in current language
-inline.js          // result of js() calls
 ]]
 
 --format js and css refs as separate refs or as a single ref based on a .cat action
 
-local function list(listfile)
-	local s = readfile(listfile)
-	s = s:gsub('//[^\n\r]*', '') --strip out comments
-	return s:gmatch'([^%s]+)'
-end
-
 function jslist(cataction, separate)
 	if not separate then
-		return string.format('	<script src="%s"></script>', lang_url('/'..cataction))
+		return string.format('	<script src="%s" async></script>', lang_url('/'..cataction))
 	end
 	local out = stringbuffer()
-	for file in list(cataction..'.cat') do
+	for i,file in ipairs(catlist_files(readfile(cataction..'.cat'))) do
 		out(string.format('	<script src="%s"></script>\n', lang_url('/'..file)))
 	end
 	return out()
@@ -182,7 +174,7 @@ function csslist(cataction, separate)
 		return string.format('	<link rel="stylesheet" type="text/css" href="/%s">', cataction)
 	end
 	local out = stringbuffer()
-	for file in list(cataction..'.cat') do
+	for i,file in ipairs(catlist_files(readfile(cataction..'.cat'))) do
 		out(string.format('	<link rel="stylesheet" type="text/css" href="/%s">\n', file))
 	end
 	return out()
@@ -200,8 +192,8 @@ local webbjs_template = [[
 {{{all_css}}}
 {{{head}}}
 	<script>
-		analytics_init()
 		$(function() {
+			analytics_init()
 			load_templates(function() {
 				$(document).setup()
 				{{#client_action}}
