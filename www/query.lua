@@ -19,8 +19,8 @@ QUERY/DDL
 	qsubst(typedef)                           create a substitution definition
 	qmacro.<name> = f(args...)                create a macro definition
 
-	nodrop([t|f]) -> t|f                      control effect
 	dropfk(name)                              drop foreign key
+	droptable([t|f]) -> t|f                   check/enable droptable()
 	droptable(name)                           drop table
 	fk(tbl, col, ...)                         create a foreign key
 
@@ -133,14 +133,37 @@ function print_queries(on)
 	end
 end
 
+local function outdent(s)
+	local indent = s:match'^[\t%s]+'
+	if not indent then return s end
+	local t = {}
+	for s in (s..'\n'):gmatch'(.-)\r?\n' do
+		local indent1 = s:sub(1, #indent)
+		if indent1 ~= indent then
+			goto fail
+		end
+		table.insert(t, s:sub(#indent + 1))
+	end
+	do return table.concat(t, '\n') end
+	::fail::
+	return s
+end
+
 local function run_query(sql)
-	sql = preprocess(sql)
 	if print_queries() then
-		print(sql)
+		print(outdent(sql))
 	end
 	assert_db(db:send_query(sql))
 	local t, err, cols = assert_db(db:read_result())
 	remove_nulls(t)
+	if cols and #cols == 1 then --single column result: return it as array
+		local t0 = t
+		local name = cols[1].name
+		t = {}
+		for i,row in ipairs(t0) do
+			t[i] = row[name]
+		end
+	end
 	if err == 'again' then --multi-result/multi-statement query
 		t = {t}
 		repeat
@@ -154,6 +177,7 @@ end
 
 function query(sql, ...) --execute, iterate rows, close
 	connect()
+	sql = preprocess(sql)
 	sql = set_params(sql, ...)
 	return run_query(sql)
 end
@@ -210,11 +234,13 @@ end
 
 --ddl vocabulary -------------------------------------------------------------
 
-function nodrop(on)
+local function allow_drop(on)
 	if on ~= nil then
-		ngx.ctx.nodrop = on
+		ngx.ctx.allow_drop = on
+	elseif ngx.ctx.allow_drop ~= nil then
+		return ngx.ctx.allow_drop
 	else
-		return ngx.ctx.nodrop or (not config('allow_drop', false))
+		return not config('allow_drop', false)
 	end
 end
 
@@ -226,14 +252,17 @@ local function constable(name)
 end
 
 function dropfk(name)
-	if nodrop() then return end
+	if not droptable() then return end
 	local tbl = constable(name)
 	if not tbl then return end
 	query('alter table '..tbl..' drop foreign key '..name..';')
 end
 
 function droptable(name)
-	if nodrop() then return end
+	if not name or type(name) == 'boolean' then
+		return allow_drop(name)
+	end
+	if not droptable() then return end
 	query('drop table if exists '..name..';')
 end
 
