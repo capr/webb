@@ -18,7 +18,7 @@ local function try_call(func, ...)
 			ngx.status = 500
 			if ngx.var.hide_errors then --can't use config() here
 				err = 'Internal error'
-			else
+			elseif not ngx.headers_sent then
 				ngx.header.content_type = 'text/plain'
 			end
 		end
