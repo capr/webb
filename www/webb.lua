@@ -43,10 +43,10 @@ ARG PARSING
 
 OUTPUT
 
-	out(s)                                  output a string
+	out(s1,...)                             output a string
 	push_out([f])                           push output function or buffer
 	pop_out() -> s                          pop output function and flush it
-	stringbuffer([t]) -> f(s)/f()->s        create a string buffer
+	stringbuffer([t]) -> f(s1,...)/f()->s   create a string buffer
 	record(f) -> s                          run f and collect out() calls
 	out_buffering() -> t | f                check if we're buffering output
 	setheader(name, val)                    set a header (unless we buffering)
@@ -108,6 +108,7 @@ HTML FILTERS
 
 FILE CONCATENATION LISTS
 
+	catlist_files(s) -> {file1,...}         parse a .cat file
 	catlist(file, args...)                  output a .cat file
 
 TODO
@@ -265,7 +266,7 @@ local _post_args = once(function()
 	if not method'post' then return end
 	ngx.req.read_body()
 	local ct = headers'Content-Type'
-	if ct:find'^application/x-www-form-urlencoded' then
+	if ct:find'^application/x%-www%-form%-urlencoded' then
 		return ngx.req.get_post_args()
 	elseif ct:find'^application/json' then
 		return json(ngx.req.get_body_data())
@@ -351,17 +352,21 @@ function out_buffering()
 	return ngx.ctx.outfunc ~= nil
 end
 
-local function default_outfunc(s)
-	ngx.print(s)
+local function default_outfunc(...)
+	--TODO: call tostring() on all args
+	ngx.print(...)
 end
 
 function stringbuffer(t)
 	t = t or {}
-	return function(s)
-		if s then
-			t[#t+1] = s
-		else --flush it
+	return function(...)
+		local n = select('#',...)
+		if n == 0 then --flush it
 			return table.concat(t)
+		end
+		for i=1,n do
+			local s = select(i,...)
+			t[#t+1] = tostring(s)
 		end
 	end
 end
@@ -383,10 +388,10 @@ function pop_out()
 	return s
 end
 
-function out(s)
-	if s == nil then return end
+function out(s, ...)
+	if s == nil then return end --prevent flushing the buffer needlessly
 	local outfunc = ngx.ctx.outfunc or default_outfunc
-	outfunc(tostring(s))
+	outfunc(s, ...)
 end
 
 local function pass(...)
@@ -404,31 +409,42 @@ function setheader(name, val)
 	ngx.header[name] = val
 end
 
-function print(...)
-	local out = default_outfunc
-	ngx.header.content_type = 'text/plain'
-	local n = select('#', ...)
-	for i=1,n do
-		out(tostring((select(i, ...))))
-		if i < n then
-			out'\t'
+local function print_wrapper(print)
+	return function(...)
+		if not ngx.headers_sent then
+			ngx.header.content_type = 'text/plain'
 		end
+		print(...)
+		ngx.flush()
 	end
-	out'\n'
 end
 
+--print functions for debugging with no output buffering and flushing.
+
+print = print_wrapper(glue.printer(ngx.print, tostring))
+
+local pp_ = require'pp'
+
+pp = print_wrapper(glue.printer(function(v)
+	if type(v) == 'table' then
+		pp_.write(ngx.print, v, '   ', {})
+	else
+		ngx.print(v)
+	end
+end)
+)
 --html encoding --------------------------------------------------------------
 
 function html(s)
 	if s == nil then return '' end
-	return tostring(s):gsub('[&"<>\\]', function(c)
+	return (tostring(s):gsub('[&"<>\\]', function(c)
 		if c == '&' then return '&amp;'
 		elseif c == '"' then return '\"'
 		elseif c == '\\' then return '\\\\'
 		elseif c == '<' then return '&lt;'
 		elseif c == '>' then return '&gt;'
 		else return c end
-	end)
+	end))
 end
 
 --url encoding/decoding ------------------------------------------------------
@@ -801,6 +817,21 @@ end
 
 --concatenated files preprocessor --------------------------------------------
 
+--NOTE: duplicates are ignored to allow require()-like functionality
+--when composing file lists from independent modules (see jsfile and cssfile).
+function catlist_files(s)
+	s = s:gsub('//[^\n\r]*', '') --strip out comments
+	local already = {}
+	local t = {}
+	for file in s:gmatch'([^%s]+)' do
+		if not already[file] then
+			already[file] = true
+			table.insert(t, file)
+		end
+	end
+	return t
+end
+
 --NOTE: can also concatenate actions if the actions module is loaded.
 --NOTE: favors plain files over actions because it can generate etags without
 --actually reading the files.
@@ -811,9 +842,8 @@ function catlist(listfile, ...)
 	--generate and check etag
 	local t = {} --etag seeds
 	local c = {} --output generators
-	local s = readfile(listfile)
-	s = s:gsub('//[^\n\r]*', '') --strip out comments
-	for file in s:gmatch'([^%s]+)' do
+
+	for i,file in ipairs(catlist_files(readfile(listfile))) do
 		if readfile[file] then --virtual file
 			table.insert(t, readfile(file))
 			table.insert(c, function() out(readfile(file)) end)
