@@ -197,8 +197,9 @@ $.fn.abort_all = function(filter) {
 
 var jqget = $.fn.get
 $.fn.get = function(arg1, arg2, arg3, arg4) {
-	if (!arg1) // .get() is a standard jquery method we're overloading
-		return jqget.call(this)
+	// .get() is a standard jquery method we're overloading
+	if (!arg1 || typeof(arg1) == 'number')
+		return jqget.call(this, arg1)
 	return $(this).ajax(_ajax_args(false, arg1, arg2, arg3, arg4))
 }
 
