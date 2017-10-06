@@ -19,57 +19,6 @@
 			#btn_cancel
 */
 
-// session vocabulary --------------------------------------------------------
-
-function login(auth, success, error, opt, arg) {
-	function logged_in(usr) {
-		broadcast('usr', usr)
-		if (success)
-			success(usr)
-	}
-	function login_failed(xhr) {
-		var err = xhr.responseText
-		S('server_error', 'There was an error.<br>Please try again or contact us.')
-		S('login_error_email_taken', 'This email is already taken')
-		S('login_error_user_pass', 'Wrong email address or password')
-		var msg = S('login_error_'+err) || S('server_error')
-		notify(msg)
-		if (error)
-			error()
-	}
-	opt = $.extend({
-			url: '/login.json' + (arg || ''),
-			success: logged_in,
-			error: login_failed,
-			data: auth,
-		}, opt)
-	$(opt.dst || document).ajax(opt)
-}
-
-function logout(success, error, opt) {
-	return login(null, success, error, opt, '/logout')
-}
-
-var g_admin = false
-function admin() {
-	return g_admin
-}
-
-function editmode() {
-	return admin()
-}
-
-function init_admin() {
-	listen('usr.admin', function(usr) {
-		g_admin = usr.admin
-	})
-}
-
-function allow(truth) {
-	if(!truth)
-		exec('/account')
-}
-
 // account widget ------------------------------------------------------------
 
 // account_widget({options...}) -> account
