@@ -10,7 +10,7 @@ SESSIONS
 	uid([field|'*']) -> val | t | uid         get current user field(s) or id
 	admin() -> t|f                            user has admin rights
 	touch_usr()                               update user's atime
-	set_pass(pass)                            set password for current user
+	set_pass([uid, ]pass)                     set password for (current) user
 	send_auth_token(email, lang)              send auth token by email
 
 CONFIG
@@ -294,11 +294,17 @@ function auth.pass(auth)
 	end
 end
 
-function set_pass(pass)
-	local usr = userinfo(allow(session_uid()))
-	allow(usr.uid)
-	allow(usr.haspass)
-	query('update usr set pass = ? where uid = ?', pass_hash(pass), usr.uid)
+function set_pass(uid, pass)
+	if not pass then
+		uid, pass = nil, uid
+	end
+	if not uid then
+		local usr = userinfo(allow(session_uid()))
+		allow(usr.uid)
+		allow(usr.haspass)
+		uid = usr.uid
+	end
+	query('update usr set pass = ? where uid = ?', pass_hash(pass), uid)
 	clear_userinfo_cache(uid)
 end
 
