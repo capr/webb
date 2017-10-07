@@ -189,8 +189,7 @@ function query1(sql, ...) --query first row (or first row/column) and close
 	local row = t[1]
 	if not row then return end
 	if #cols == 1 then
-		local _,v = next(row)
-		return v
+		return row --row is actually the value
 	end --first row/col
 	return row --first row
 end
