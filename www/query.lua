@@ -149,12 +149,7 @@ local function outdent(s)
 	return s
 end
 
-local function run_query(sql)
-	if print_queries() then
-		print(outdent(sql))
-	end
-	assert_db(db:send_query(sql))
-	local t, err, cols = assert_db(db:read_result())
+local function process_result(t, cols)
 	remove_nulls(t)
 	if cols and #cols == 1 then --single column result: return it as array
 		local t0 = t
@@ -164,11 +159,21 @@ local function run_query(sql)
 			t[i] = row[name]
 		end
 	end
+	return t
+end
+
+local function run_query(sql)
+	if print_queries() then
+		print(outdent(sql))
+	end
+	assert_db(db:send_query(sql))
+	local t, err, cols = assert_db(db:read_result())
+	t = process_result(t, cols)
 	if err == 'again' then --multi-result/multi-statement query
 		t = {t}
 		repeat
 			local t1, err = assert_db(db:read_result())
-			remove_nulls(t1)
+			t1 = process_result(t1, cols)
 			t[#t+1] = t1
 		until not err
 	end
