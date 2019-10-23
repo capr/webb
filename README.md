@@ -1,46 +1,16 @@
 
-# Webb Framework Documentation
-# Written by Cosmin Apreutesei. Public Domain.
+# Webb Framework
+### Written by Cosmin Apreutesei. Public Domain.
 
 
-Install
-------------------------------------------------------------------------------
+## Install
 
-Install Ubuntu 17 packages
+### Download & build openresty
 
-
-	sudo apt-get update
-	sudo apt-get install
-		build-essential \
-		libncurses5-dev \
-		libpcre3-dev \
-		libreadline-dev \
-		libssl-dev \
-		mysql-server \
-		php-fpm \
-		php-mysql
+	./build-openresty
 
 
-	This will install mysql 5.7 and php7.
-
-
-Install OpenResty
-
-	Download and unpack the OpenResty 1.11.2.4 sources, then:
-
-
-		./configure --prefix=/home/<user>/openresty
-		make
-		make install
-
-
-	Install a php-fpm pool to be used by all webb instances:
-
-		./install-php-fpm-pool
-
-
-Reset MySQL root password
-
+### Reset MySQL root password
 
 	sudo mysql -u root
 
@@ -50,7 +20,7 @@ Reset MySQL root password
 	FLUSH PRIVILEGES;
 
 
-Dependency versions
+### Dependency versions
 
 	OpenResty         1.11.2.4
 
@@ -66,10 +36,8 @@ Dependency versions
 	lustache.lua      1.3.1  (included)
 	lp.lua            1.15   (included; current is ?)
 
-	MySQL             5.7.19
-	PHP               7.0.22 (only for adminer.php)
 
-Extra modules
+### Extra modules
 
 	jquery.validate   1.17.0 (included)
 	jquery.easing     1.3    (included)
@@ -79,16 +47,16 @@ Extra modules
 
 	adminer.php       4.3.1  (included)
 
-HowTO
-------------------------------------------------------------------------------
+
+## HowTO
 
 Here's a very basic website sketch that uses some webb features.
 
 Create a file `nginx-server.conf` and type in it:
 
 	listen 127.0.0.1:8882;
-	var $main_module "main"; --runs main.lua for every url
-	var $hide_errors true; --hide errors when crashing
+	set $main_module "main";   # runs main.lua for every url
+	set $hide_errors true;     # hide errors when crashing
 
 Type `./ngx-start` then check `http://127.0.0.1:8882`.
 
@@ -166,8 +134,8 @@ secrets.lua, not to be added to git
 	config('db_pass',        nil)                   --the mysql password
 
 
-Modules
-------------------------------------------------------------------------------
+## Modules
+
 
 webb.lua                       main module
 action.lua                     routing module
@@ -184,4 +152,3 @@ webb.timeago.js                time formatting
 webb.util.js                   misc.
 webb.back-to-top.js            back-to-top button
 webb.content-tools.js          contenteditable library
-

@@ -1,5 +1,7 @@
 openresty
 luapower
-logs/*
+logs/**
 !logs/.empty
-
+nginx-*.conf
+tmp/**
+!tmp/.empty
