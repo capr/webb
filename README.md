@@ -22,10 +22,6 @@
 
 ### Dependency versions
 
-	OpenResty         1.11.2.4
-
-	resty.mysql       0.13   (included; current is 0.20)
-	resty.random      ?      (included; current is 0.09 and not compatible)
 	resty.session     1.1    (included; current is 2.18)
 	resty.socket      ?      (included; current is 0.0.7)
 
@@ -42,10 +38,7 @@
 	jquery.validate   1.17.0 (included)
 	jquery.easing     1.3    (included)
 	content-tools		1.5.4  (included)
-
 	normalize.css     7.0.0  (included)
-
-	adminer.php       4.3.1  (included)
 
 
 ## HowTO
