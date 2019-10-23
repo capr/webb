@@ -1,0 +1,26 @@
+#!/bin/bash
+
+cd "$(dirname "$0")" || exit 1
+
+openresty=openresty-1.15.8.2
+pcre=pcre-8.43
+zlib=zlib-1.2.11
+
+download() {
+    local url=$1
+    local name=$2
+    [ -d $name ] && return
+    wget $url$name.tar.gz
+    tar xvfz $name.tar.gz
+    [ -d $name ] || { echo "error downloading $name."; exit 1; }
+}
+
+download https://openresty.org/download/ $openresty
+download https://ftp.pcre.org/pub/pcre/ $pcre
+download https://zlib.net/ $zlib
+
+mkdir -p openresty
+cd $openresty
+./configure --prefix=../openresty --with-pcre=../$pcre --with-zlib=../$zlib
+make
+make install
