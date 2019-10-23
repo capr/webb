@@ -4,4 +4,9 @@ logs/**
 !logs/.empty
 nginx-*.conf
 tmp/**
+src/
 !tmp/.empty
+
+www/config.lua
+www/secrets.lua
+www/main.lua
